@@ -404,7 +404,7 @@ makeChips('personnelChips', [
   'ZE 88Y 80Z','ZE/T','T/ZE','ZE/SPD T','ZE 80Z','THUND','BEN','SPD T 80Z',
   'T 80X 18Z','ZE 3H','ST 3 H 81Y','BEN 18Z','GOZ','SPDT 18Z','ZE 3F','ST 3 H'
 ]);
-makeChips('playtypeChips', ['Run','Pass','RPO','Screen','PA Pass','Draw']);
+makeChips('playtypeChips', ['Run','Pass','RPO','Screen','PA Pass','Draw','Penalty']);
 const COVERAGE_OPTIONS = ['Cover 0','Cover 1','Cover 2','Cover 3','Cover 4','Cover 6','Man','Match','Other'];
 makeChips('coverageChips', COVERAGE_OPTIONS);
 
@@ -565,10 +565,25 @@ function groupBy(arr, keyFn){
   });
   return m;
 }
+/* success = 40%+ of yards-to-go on 1st down, 50%+ on 2nd down, and an actual
+   conversion (new first down / TD) on 3rd or 4th down. Scores always count;
+   turnovers, turnovers on downs, and sacks-into-failed-downs never do.
+   Punts and end-of-half snaps aren't graded either way (excluded). */
+function isSuccess(p){
+  if(p.outcome==='td_off' || p.outcome==='fg_good') return true;
+  if(['turnover','downs','safety','td_def','fg_miss'].includes(p.outcome)) return false;
+  if(p.outcome==='punt' || p.outcome==='eoh') return null;
+  const gain = p.yardsGained;
+  if(gain===null || gain===undefined || isNaN(gain)) return null;
+  if(p.down===1) return gain >= 0.4*p.distance;
+  if(p.down===2) return gain >= 0.5*p.distance;
+  return gain >= p.distance; // 3rd/4th: only a real conversion counts
+}
 function statsFor(rows){
   const n = rows.length;
   const avgEpa = rows.reduce((s,r)=>s+r.epa,0)/n;
-  const successRate = rows.filter(r=>r.epa>0).length/n;
+  const successEligible = rows.map(isSuccess).filter(v=>v!==null);
+  const successRate = successEligible.length ? successEligible.filter(v=>v).length/successEligible.length : null;
   const blitzKnown = rows.filter(r=>r.blitz!=='pending');
   const blitzRate = blitzKnown.length ? blitzKnown.filter(r=>r.blitz==='yes').length/blitzKnown.length : null;
   return { n, avgEpa, successRate, blitzRate, blitzKnownN: blitzKnown.length };
@@ -602,7 +617,7 @@ function renderTendencies(){
         <td>${k}</td>
         <td class="num">${s.n}</td>
         <td class="num">${(s.avgEpa>=0?'+':'')+s.avgEpa.toFixed(2)}</td>
-        <td class="num">${Math.round(s.successRate*100)}%</td>
+        <td class="num">${s.successRate===null?'&mdash;':Math.round(s.successRate*100)+'%'}</td>
         <td class="num">${s.blitzRate===null?'&mdash;':Math.round(s.blitzRate*100)+'%'}</td>
         <td>${topCoverage(v)}</td>
       </tr>`;
