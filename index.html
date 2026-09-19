@@ -48,9 +48,10 @@
   .view.active{display:block;}
   .card{
     background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
-    padding:14px; margin-bottom:12px;
+    padding:16px; margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.15);
   }
-  .card h2{margin:0 0 10px; font-size:14px; color:var(--text-dim); text-transform:none; font-weight:600;}
+  .card h2{margin:0 0 10px; font-size:14px; color:var(--text-dim); text-transform:none; font-weight:700; letter-spacing:.02em;}
+  .card > h2{text-align:center;}
   .row{display:flex; gap:8px; margin-bottom:10px;}
   .row > div{flex:1;}
   label{display:block; font-size:11px; color:var(--text-faint); margin-bottom:4px;}
@@ -85,9 +86,10 @@
   .epa-result .lbl{font-size:12px; color:var(--text-faint); margin-top:4px;}
   .pos{color:var(--good);} .neg{color:var(--bad);}
   table{width:100%; border-collapse:collapse; font-size:12.5px;}
-  th,td{padding:7px 6px; text-align:left; border-bottom:1px solid var(--line);}
-  th{color:var(--text-faint); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.03em;}
+  th,td{padding:8px 6px; text-align:center; border-bottom:1px solid var(--line);}
+  th{color:var(--text-faint); font-weight:700; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em;}
   td.num{text-align:right; font-variant-numeric:tabular-nums;}
+  td.lbl{text-align:left;}
   .subtab{display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap;}
   .subtab button{
     padding:7px 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg2);
@@ -115,7 +117,7 @@
     body{ background:#fff; color:#111; padding:0; }
     main{ padding:0; max-width:none; }
     #view-report{ display:block !important; }
-    .card{ border:1px solid #ccc; background:#fff; break-inside:avoid; }
+    .card{ border:1px solid #ccc; background:#fff; break-inside:avoid; box-shadow:none; }
     .card h2{ color:#111; }
     table{ font-size:11px; }
     th{ color:#333; }
@@ -125,7 +127,10 @@
     .report-header p{ margin:2px 0 0; font-size:12px; color:#555; }
   }
   .report-section{ margin-bottom:4px; }
-  .report-section h3{ font-size:13px; margin:0 0 8px; color:var(--text-dim); }
+  .report-section h3{ font-size:13px; margin:0 0 8px; color:var(--text-dim); text-align:center; }
+  .report-header{ text-align:center; margin-bottom:16px; }
+  .report-header h1{ margin:0; font-size:19px; color:var(--purple-bright); }
+  .report-header p{ margin:2px 0 0; font-size:12px; color:var(--text-faint); }
   .rank-row{ display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px; }
   .rank-row:last-child{ border-bottom:none; }
   .rank-row .rk{ color:var(--text-faint); width:20px; display:inline-block; }
@@ -206,6 +211,7 @@
 
       <label style="margin-top:12px;">Play type</label>
       <div class="chipset" id="playtypeChips"></div>
+      <input id="playtypeCustom" type="text" placeholder="Or type a concept: Duo, Four Verts, Power..." style="margin-top:8px;">
     </div>
 
     <div class="card">
@@ -262,6 +268,7 @@
     <div class="subtab" id="tendSubtab">
       <button data-t="personnel" class="on">By personnel</button>
       <button data-t="playtype">By play type</button>
+      <button data-t="down">By down</button>
       <button data-t="dd">3rd down (DD)</button>
     </div>
     <div class="card">
@@ -468,7 +475,7 @@ document.getElementById('logPlayBtn').addEventListener('click', ()=>{
   const scoreDiff = scoreUs - scoreThem;
 
   const personnel = chipVal('personnelChips') || 'Unlabeled';
-  const playType = chipVal('playtypeChips') || 'Unlabeled';
+  const playType = chipVal('playtypeChips','playtypeCustom') || 'Unlabeled';
   const blitz = segVal('blitzSeg');
   const coverage = chipVal('coverageChips','coverageCustom') || 'Pending';
   const outcome = outcomeSelect.value;
@@ -584,9 +591,11 @@ function statsFor(rows){
   const avgEpa = rows.reduce((s,r)=>s+r.epa,0)/n;
   const successEligible = rows.map(isSuccess).filter(v=>v!==null);
   const successRate = successEligible.length ? successEligible.filter(v=>v).length/successEligible.length : null;
+  const yardsKnown = rows.filter(r=>typeof r.yardsGained==='number' && !isNaN(r.yardsGained));
+  const avgYards = yardsKnown.length ? yardsKnown.reduce((s,r)=>s+r.yardsGained,0)/yardsKnown.length : null;
   const blitzKnown = rows.filter(r=>r.blitz!=='pending');
   const blitzRate = blitzKnown.length ? blitzKnown.filter(r=>r.blitz==='yes').length/blitzKnown.length : null;
-  return { n, avgEpa, successRate, blitzRate, blitzKnownN: blitzKnown.length };
+  return { n, avgEpa, successRate, avgYards, yardsKnownN: yardsKnown.length, blitzRate, blitzKnownN: blitzKnown.length };
 }
 function ddBucket(distance){
   if(distance<=2) return 'Short (1-2)';
@@ -614,8 +623,9 @@ function renderTendencies(){
     for(const [k,v] of groups){
       const s = statsFor(v);
       rows += `<tr>
-        <td>${k}</td>
+        <td class="lbl">${k}</td>
         <td class="num">${s.n}</td>
+        <td class="num">${s.avgYards===null?'&mdash;':(s.avgYards>=0?'+':'')+s.avgYards.toFixed(1)}</td>
         <td class="num">${(s.avgEpa>=0?'+':'')+s.avgEpa.toFixed(2)}</td>
         <td class="num">${s.successRate===null?'&mdash;':Math.round(s.successRate*100)+'%'}</td>
         <td class="num">${s.blitzRate===null?'&mdash;':Math.round(s.blitzRate*100)+'%'}</td>
@@ -624,8 +634,29 @@ function renderTendencies(){
     }
     body.innerHTML = `<table><thead><tr>
       <th>${mode==='personnel'?'Personnel':'Play type'}</th>
-      <th class="num">N</th><th class="num">Avg EPA</th><th class="num">Success%</th>
+      <th class="num">N</th><th class="num">Avg Yds</th><th class="num">Avg EPA</th><th class="num">Success%</th>
       <th class="num">Blitz%</th><th>Top coverage</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  if(mode==='down'){
+    const groups = groupBy(PLAYS, r=>r.down);
+    let rows='';
+    [1,2,3,4].forEach(d=>{
+      const v = groups.get(d);
+      if(!v) return;
+      const s = statsFor(v);
+      rows += `<tr>
+        <td class="lbl">${d}${ordSuf(d)}</td>
+        <td class="num">${s.n}</td>
+        <td class="num">${s.avgYards===null?'&mdash;':(s.avgYards>=0?'+':'')+s.avgYards.toFixed(1)}</td>
+        <td class="num">${(s.avgEpa>=0?'+':'')+s.avgEpa.toFixed(2)}</td>
+        <td class="num">${s.successRate===null?'&mdash;':Math.round(s.successRate*100)+'%'}</td>
+      </tr>`;
+    });
+    body.innerHTML = `<h2 style="margin-top:0; text-align:center;">By down</h2>
+      <table><thead><tr>
+      <th>Down</th><th class="num">N</th><th class="num">Avg Yds</th><th class="num">Avg EPA</th><th class="num">Success%</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
   }
 
@@ -640,14 +671,14 @@ function renderTendencies(){
       if(!v) return;
       const s = statsFor(v);
       rows += `<tr>
-        <td>${k}</td>
+        <td class="lbl">${k}</td>
         <td class="num">${s.n}</td>
         <td class="num">${(s.avgEpa>=0?'+':'')+s.avgEpa.toFixed(2)}</td>
         <td class="num">${s.blitzRate===null?'&mdash;':Math.round(s.blitzRate*100)+'%'}</td>
         <td>${topCoverage(v)}</td>
       </tr>`;
     });
-    body.innerHTML = `<h2 style="margin-top:0;">3rd down, by distance (DD)</h2>
+    body.innerHTML = `<h2 style="margin-top:0; text-align:center;">3rd down, by distance (DD)</h2>
       <table><thead><tr>
       <th>Bucket</th><th class="num">N</th><th class="num">Avg EPA</th>
       <th class="num">Blitz%</th><th>Top coverage</th>
@@ -714,7 +745,7 @@ function renderReport(){
     </div>
 
     <div class="card">
-      <h3 style="font-size:13px; color:var(--text-dim); margin:0 0 10px;">3rd down defensive coverage tendencies</h3>
+      <h3 style="font-size:13px; color:var(--text-dim); margin:0 0 10px; text-align:center;">3rd down defensive coverage tendencies</h3>
       ${thirdDowns.length===0 ? '<div class="empty" style="padding:6px 0;">No 3rd-down plays logged yet.</div>' :
         ddOrder.map(k=>{
           const v = ddGroups.get(k);
