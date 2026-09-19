@@ -102,8 +102,6 @@
   .row-recent:last-child{border-bottom:none;}
   .row-recent .meta{color:var(--text-faint); font-size:11.5px;}
   .badge{display:inline-block; padding:2px 7px; border-radius:5px; font-size:10.5px; font-weight:700; margin-left:5px;}
-  .badge.blitz{background:rgba(224,86,107,.18); color:var(--bad);}
-  .badge.nb{background:rgba(63,191,127,.15); color:var(--good);}
   .badge.pending{background:rgba(224,179,86,.18); color:var(--warn);}
   .del-btn{background:none;border:none;color:var(--bad);font-size:12px;cursor:pointer;padding:4px 8px;}
   .flex-between{display:flex; justify-content:space-between; align-items:center;}
@@ -126,6 +124,7 @@
     .report-header p{ margin:2px 0 0; font-size:9px; color:#555; }
     .report-grid{ column-count:2; column-gap:16px; }
     .report-block{ break-inside:avoid; margin-bottom:8px; }
+    .report-block.wide{ column-span:all; }
     .report-block h3{ font-size:10px; margin:0 0 4px; color:#333; }
     .report-block table{ font-size:8px; width:100%; }
     .report-block th, .report-block td{ padding:2px 3px; }
@@ -219,14 +218,27 @@
 
     <div class="card">
       <h2>Their look</h2>
-      <p class="footnote" style="margin-top:-4px; margin-bottom:10px;">Don't have this yet? Leave it Pending and fill it in later from the Play Log after the drive.</p>
-      <label>Blitz?</label>
-      <div class="seg" id="blitzSeg">
-        <button data-v="pending">Pending</button><button data-v="no">No</button><button data-v="sim">Sim/Pressure</button><button data-v="yes">Blitz</button>
+      <p class="footnote" style="margin-top:-4px; margin-bottom:10px;">Don't have this yet? Leave it blank and fill it in later from the Play Log after the drive.</p>
+      <div class="row">
+        <div>
+          <label>Front</label>
+          <input id="frontInput" type="text" placeholder="e.g. 4-3, Odd, Bear">
+        </div>
+        <div>
+          <label>Stunt</label>
+          <input id="stuntInput" type="text" placeholder="e.g. Twist, None">
+        </div>
       </div>
-      <label style="margin-top:12px;">Coverage <span style="color:var(--text-faint); font-weight:400;">(leave blank if you'll add it later)</span></label>
-      <div class="chipset" id="coverageChips"></div>
-      <input id="coverageCustom" type="text" placeholder="Custom coverage..." style="margin-top:8px;">
+      <div class="row">
+        <div>
+          <label>Pressure</label>
+          <input id="pressureInput" type="text" placeholder="e.g. A-gap, Zero, None">
+        </div>
+        <div>
+          <label>Coverage</label>
+          <input id="coverageInput" type="text" placeholder="e.g. Cover 3, Man">
+        </div>
+      </div>
     </div>
 
     <div class="card">
@@ -399,7 +411,6 @@ function segVal(id){
 }
 wireSeg('quarterSeg','1');
 wireSeg('downSeg','1');
-wireSeg('blitzSeg','pending');
 
 function makeChips(containerId, options, multi=false){
   const el = document.getElementById(containerId);
@@ -419,8 +430,6 @@ makeChips('personnelChips', [
   'T 80X 18Z','ZE 3H','ST 3 H 81Y','BEN 18Z','GOZ','SPDT 18Z','ZE 3F','ST 3 H'
 ]);
 makeChips('playtypeChips', ['Run','Pass','RPO','Screen','PA Pass','Draw','Penalty']);
-const COVERAGE_OPTIONS = ['Cover 0','Cover 1','Cover 2','Cover 3','Cover 4','Cover 6','Man','Match','Other'];
-makeChips('coverageChips', COVERAGE_OPTIONS);
 
 function chipVal(containerId, customInputId){
   const on = document.getElementById(containerId).querySelector('.chip.on');
@@ -483,8 +492,10 @@ document.getElementById('logPlayBtn').addEventListener('click', ()=>{
 
   const personnel = chipVal('personnelChips') || 'Unlabeled';
   const playType = chipVal('playtypeChips','playtypeCustom') || 'Unlabeled';
-  const blitz = segVal('blitzSeg');
-  const coverage = chipVal('coverageChips','coverageCustom') || 'Pending';
+  const front = document.getElementById('frontInput').value.trim();
+  const stunt = document.getElementById('stuntInput').value.trim();
+  const pressure = document.getElementById('pressureInput').value.trim();
+  const coverage = document.getElementById('coverageInput').value.trim();
   const outcome = outcomeSelect.value;
 
   const before = { timeSecsRem, yardsToGoal:ytg, distance, down, scoreDiff };
@@ -520,7 +531,7 @@ document.getElementById('logPlayBtn').addEventListener('click', ()=>{
 
   const play = {
     ts: Date.now(), quarter, clockStr, down, distance, ytg, scoreUs, scoreThem,
-    personnel, playType, blitz, coverage, outcome, yardsGained,
+    personnel, playType, front, stunt, pressure, coverage, outcome, yardsGained,
     epBefore: round3(epBefore), epAfter: round3(epAfter), epa: round3(epa)
   };
   PLAYS.push(play);
@@ -553,14 +564,23 @@ function renderRecent(){
     const sign = p.epa>0?'+':'';
     return `<div class="row-recent">
       <div>
-        <div>${p.personnel} &middot; ${p.playType} ${p.blitz==='yes'?'<span class="badge blitz">BLITZ</span>':''}${p.blitz==='no'?'<span class="badge nb">NO BLITZ</span>':''}${p.blitz==='pending'?'<span class="badge pending">DEF PENDING</span>':''}</div>
-        <div class="meta">Q${p.quarter} ${p.clockStr} &middot; ${p.down}${ordSuf(p.down)} &amp; ${p.distance} &middot; ${p.coverage}</div>
+        <div>${p.personnel} &middot; ${p.playType}</div>
+        <div class="meta">Q${p.quarter} ${p.clockStr} &middot; ${p.down}${ordSuf(p.down)} &amp; ${p.distance} &middot; ${theirLookSummary(p)}</div>
       </div>
       <div class="${cls}" style="font-weight:700;">${sign}${p.epa.toFixed(2)}</div>
     </div>`;
   }).join('');
 }
 function ordSuf(n){ return n===1?'st':n===2?'nd':n===3?'rd':'th'; }
+function needsDefense(p){ return !p.front && !p.stunt && !p.pressure && !p.coverage; }
+function theirLookSummary(p){
+  const parts = [];
+  if(p.front) parts.push(p.front);
+  if(p.stunt) parts.push(p.stunt);
+  if(p.pressure) parts.push(p.pressure);
+  if(p.coverage) parts.push(p.coverage);
+  return parts.length ? parts.join(' &middot; ') : '<span class="badge pending">DEF PENDING</span>';
+}
 
 /* ---------- tendencies ---------- */
 document.getElementById('tendSubtab').addEventListener('click', (e)=>{
@@ -600,22 +620,22 @@ function statsFor(rows){
   const successRate = successEligible.length ? successEligible.filter(v=>v).length/successEligible.length : null;
   const yardsKnown = rows.filter(r=>typeof r.yardsGained==='number' && !isNaN(r.yardsGained));
   const avgYards = yardsKnown.length ? yardsKnown.reduce((s,r)=>s+r.yardsGained,0)/yardsKnown.length : null;
-  const blitzKnown = rows.filter(r=>r.blitz!=='pending');
-  const blitzRate = blitzKnown.length ? blitzKnown.filter(r=>r.blitz==='yes').length/blitzKnown.length : null;
-  return { n, avgEpa, successRate, avgYards, yardsKnownN: yardsKnown.length, blitzRate, blitzKnownN: blitzKnown.length };
+  return { n, avgEpa, successRate, avgYards, yardsKnownN: yardsKnown.length };
 }
 function ddBucket(distance){
   if(distance<=2) return 'Short (1-2)';
   if(distance<=6) return 'Medium (3-6)';
   return 'Long (7+)';
 }
-function topCoverage(rows){
-  const known = rows.filter(r=>r.coverage!=='Pending');
-  if(known.length===0) return '&mdash;';
-  const m = groupBy(known, r=>r.coverage);
-  let best=null, bestN=0;
-  for(const [k,v] of m){ if(v.length>bestN){ best=k; bestN=v.length; } }
-  return best ? `${best} (${Math.round(100*bestN/known.length)}%)` : '&mdash;';
+/* frequency breakdown of a free-text defensive-look field (front/stunt/pressure/coverage),
+   ignoring blank entries. topN limits how many values are shown (default: all). */
+function fieldBreakdown(rows, field, topN){
+  const known = rows.filter(r=>r[field]);
+  if(known.length===0) return null;
+  const m = groupBy(known, r=>r[field]);
+  const entries = [...m.entries()].sort((a,b)=>b[1].length-a[1].length);
+  const limited = topN ? entries.slice(0,topN) : entries;
+  return limited.map(([k,v])=>`${k} (${Math.round(100*v.length/known.length)}%)`).join(', ');
 }
 
 function renderTendencies(){
@@ -635,14 +655,11 @@ function renderTendencies(){
         <td class="num">${s.avgYards===null?'&mdash;':(s.avgYards>=0?'+':'')+s.avgYards.toFixed(1)}</td>
         <td class="num">${(s.avgEpa>=0?'+':'')+s.avgEpa.toFixed(2)}</td>
         <td class="num">${s.successRate===null?'&mdash;':Math.round(s.successRate*100)+'%'}</td>
-        <td class="num">${s.blitzRate===null?'&mdash;':Math.round(s.blitzRate*100)+'%'}</td>
-        <td>${topCoverage(v)}</td>
       </tr>`;
     }
     body.innerHTML = `<table><thead><tr>
       <th>${mode==='personnel'?'Personnel':'Play type'}</th>
       <th class="num">N</th><th class="num">Avg Yds</th><th class="num">Avg EPA</th><th class="num">Success%</th>
-      <th class="num">Blitz%</th><th>Top coverage</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
   }
 
@@ -672,36 +689,26 @@ function renderTendencies(){
     if(thirdDowns.length===0){ body.innerHTML = '<div class="empty">No 3rd-down plays logged yet.</div>'; return; }
     const groups = groupBy(thirdDowns, r=>ddBucket(r.distance));
     const order = ['Short (1-2)','Medium (3-6)','Long (7+)'];
-    let rows='';
+    let html = '<h2 style="margin-top:0; text-align:center;">3rd down, by distance (DD)</h2>';
     order.forEach(k=>{
       const v = groups.get(k);
       if(!v) return;
       const s = statsFor(v);
-      rows += `<tr>
-        <td class="lbl">${k}</td>
-        <td class="num">${s.n}</td>
-        <td class="num">${(s.avgEpa>=0?'+':'')+s.avgEpa.toFixed(2)}</td>
-        <td class="num">${s.blitzRate===null?'&mdash;':Math.round(s.blitzRate*100)+'%'}</td>
-        <td>${topCoverage(v)}</td>
-      </tr>`;
+      html += `<div style="margin-bottom:16px;">
+        <div style="font-weight:700; font-size:13px; margin-bottom:6px;">${k} &middot; n=${s.n} &middot; avg EPA ${(s.avgEpa>=0?'+':'')+s.avgEpa.toFixed(2)}</div>
+        <div class="footnote" style="font-size:12.5px; line-height:1.7; color:var(--text-dim);">
+          <b>Front:</b> ${fieldBreakdown(v,'front') || '&mdash;'}<br>
+          <b>Stunt:</b> ${fieldBreakdown(v,'stunt') || '&mdash;'}<br>
+          <b>Pressure:</b> ${fieldBreakdown(v,'pressure') || '&mdash;'}<br>
+          <b>Coverage:</b> ${fieldBreakdown(v,'coverage') || '&mdash;'}
+        </div>
+      </div>`;
     });
-    body.innerHTML = `<h2 style="margin-top:0; text-align:center;">3rd down, by distance (DD)</h2>
-      <table><thead><tr>
-      <th>Bucket</th><th class="num">N</th><th class="num">Avg EPA</th>
-      <th class="num">Blitz%</th><th>Top coverage</th>
-    </tr></thead><tbody>${rows}</tbody></table>`;
+    body.innerHTML = html;
   }
 }
 
 /* ---------- halftime report ---------- */
-function coverageBreakdown(rows){
-  const known = rows.filter(r=>r.coverage!=='Pending');
-  if(known.length===0) return '<span class="empty" style="padding:0;">No coverage data logged yet</span>';
-  const m = groupBy(known, r=>r.coverage);
-  const entries = [...m.entries()].sort((a,b)=>b[1].length-a[1].length);
-  return entries.map(([k,v])=>`${k} &mdash; ${Math.round(100*v.length/known.length)}% (${v.length})`).join('<br>');
-}
-
 let REPORT_MODE = 'half';
 document.getElementById('reportSubtab').addEventListener('click', (e)=>{
   if(e.target.tagName!=='BUTTON') return;
@@ -758,24 +765,19 @@ function renderReport(){
     const v = ddGroups.get(k);
     if(!v) return '';
     const s = statsFor(v);
-    const known = v.filter(r=>r.coverage!=='Pending');
-    let covText = '&mdash;';
-    if(known.length){
-      const m = groupBy(known, r=>r.coverage);
-      covText = [...m.entries()].sort((a,b)=>b[1].length-a[1].length).slice(0,2)
-        .map(([ck,cv])=>`${ck} ${Math.round(100*cv.length/known.length)}%`).join(', ');
-    }
     return `<tr>
       <td class="lbl">${k}</td>
       <td class="num">${s.n}</td>
       <td class="num">${(s.avgEpa>=0?'+':'')+s.avgEpa.toFixed(2)}</td>
-      <td class="num">${s.blitzRate===null?'&mdash;':Math.round(s.blitzRate*100)+'%'}</td>
-      <td>${covText}</td>
+      <td>${fieldBreakdown(v,'front',1) || '&mdash;'}</td>
+      <td>${fieldBreakdown(v,'stunt',1) || '&mdash;'}</td>
+      <td>${fieldBreakdown(v,'pressure',1) || '&mdash;'}</td>
+      <td>${fieldBreakdown(v,'coverage',1) || '&mdash;'}</td>
     </tr>`;
   }).join('');
   const ddTable = `<table><thead><tr>
-      <th>Dist.</th><th>N</th><th>EPA</th><th>Blitz%</th><th>Coverage</th>
-    </tr></thead><tbody>${ddRows || '<tr><td colspan="5" class="empty">No 3rd-down plays yet</td></tr>'}</tbody></table>`;
+      <th>Dist.</th><th>N</th><th>EPA</th><th>Front</th><th>Stunt</th><th>Pressure</th><th>Coverage</th>
+    </tr></thead><tbody>${ddRows || '<tr><td colspan="7" class="empty">No 3rd-down plays yet</td></tr>'}</tbody></table>`;
 
   body.innerHTML = `
     <div class="card">
@@ -796,8 +798,8 @@ function renderReport(){
           <h3>By down</h3>
           ${compactTable(byDownEntries, 'Down')}
         </div>
-        <div class="report-block">
-          <h3>3rd down coverage tendencies</h3>
+        <div class="report-block wide">
+          <h3>3rd down defensive tendencies</h3>
           ${ddTable}
         </div>
       </div>
@@ -819,8 +821,6 @@ document.getElementById('pendingFilterBtn').addEventListener('click', ()=>{
   renderFullLog();
 });
 
-function needsDefense(p){ return p.blitz==='pending' || p.coverage==='Pending'; }
-
 function renderFullLog(){
   const body = document.getElementById('fullLogBody');
   let list = PLAYS.slice();
@@ -840,7 +840,7 @@ function renderFullLog(){
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <div>
           <div>Q${p.quarter} ${p.clockStr} &middot; ${p.down}${ordSuf(p.down)}&amp;${p.distance} &middot; ${p.personnel}/${p.playType}</div>
-          <div class="meta">${p.coverage}${p.blitz==='yes'?' &middot; BLITZ':p.blitz==='sim'?' &middot; SIM':p.blitz==='pending'?' &middot; blitz pending':''} &middot; ${p.outcome}${pending?' <span class="badge pending">NEEDS DEFENSE</span>':''}</div>
+          <div class="meta">${theirLookSummary(p)} &middot; ${p.outcome}</div>
         </div>
         <div style="display:flex; align-items:center; gap:6px;">
           <div class="${cls}" style="font-weight:700;">${sign}${p.epa.toFixed(2)}</div>
@@ -867,50 +867,43 @@ function renderFullLog(){
   });
 }
 
+function esc(s){ return (s||'').replace(/"/g,'&quot;'); }
+
 function openDefEditor(idx){
   const panel = document.getElementById('def-editor-'+idx);
   if(!panel) return;
   if(panel.style.display === 'block'){ panel.style.display = 'none'; return; }
   const p = PLAYS[idx];
   panel.innerHTML = `
-    <label>Blitz?</label>
-    <div class="seg" id="editBlitzSeg-${idx}">
-      <button data-v="pending">Pending</button><button data-v="no">No</button><button data-v="sim">Sim/Pressure</button><button data-v="yes">Blitz</button>
+    <div class="row">
+      <div>
+        <label>Front</label>
+        <input id="editFront-${idx}" type="text" value="${esc(p.front)}">
+      </div>
+      <div>
+        <label>Stunt</label>
+        <input id="editStunt-${idx}" type="text" value="${esc(p.stunt)}">
+      </div>
     </div>
-    <label style="margin-top:10px;">Coverage</label>
-    <div class="chipset" id="editCovChips-${idx}"></div>
-    <input id="editCovCustom-${idx}" type="text" placeholder="Custom coverage..." style="margin-top:8px;" value="${(!COVERAGE_OPTIONS.includes(p.coverage) && p.coverage!=='Pending') ? p.coverage.replace(/"/g,'&quot;') : ''}">
-    <button class="submit-btn" id="editSaveBtn-${idx}" style="margin-top:10px;">Save defense</button>
+    <div class="row">
+      <div>
+        <label>Pressure</label>
+        <input id="editPressure-${idx}" type="text" value="${esc(p.pressure)}">
+      </div>
+      <div>
+        <label>Coverage</label>
+        <input id="editCoverage-${idx}" type="text" value="${esc(p.coverage)}">
+      </div>
+    </div>
+    <button class="submit-btn" id="editSaveBtn-${idx}" style="margin-top:6px;">Save defense</button>
   `;
   panel.style.display = 'block';
 
-  const bSeg = document.getElementById(`editBlitzSeg-${idx}`);
-  bSeg.querySelectorAll('button').forEach(b=>{
-    b.addEventListener('click', ()=>{ bSeg.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); });
-  });
-  const bDefault = bSeg.querySelector(`button[data-v="${p.blitz}"]`) || bSeg.querySelector('button[data-v="pending"]');
-  bDefault.classList.add('on');
-
-  const covEl = document.getElementById(`editCovChips-${idx}`);
-  COVERAGE_OPTIONS.forEach(opt=>{
-    const chip = document.createElement('div');
-    chip.className='chip'; chip.textContent=opt; chip.dataset.v=opt;
-    if(p.coverage===opt) chip.classList.add('on');
-    chip.addEventListener('click', ()=>{
-      covEl.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
-      chip.classList.add('on');
-      document.getElementById(`editCovCustom-${idx}`).value='';
-    });
-    covEl.appendChild(chip);
-  });
-
   document.getElementById(`editSaveBtn-${idx}`).addEventListener('click', ()=>{
-    const blitzVal = bSeg.querySelector('button.on').dataset.v;
-    const custom = document.getElementById(`editCovCustom-${idx}`).value.trim();
-    const chipOn = covEl.querySelector('.chip.on');
-    const covVal = custom || (chipOn ? chipOn.dataset.v : 'Pending');
-    PLAYS[idx].blitz = blitzVal;
-    PLAYS[idx].coverage = covVal;
+    PLAYS[idx].front = document.getElementById(`editFront-${idx}`).value.trim();
+    PLAYS[idx].stunt = document.getElementById(`editStunt-${idx}`).value.trim();
+    PLAYS[idx].pressure = document.getElementById(`editPressure-${idx}`).value.trim();
+    PLAYS[idx].coverage = document.getElementById(`editCoverage-${idx}`).value.trim();
     savePlays(PLAYS);
     renderFullLog();
     renderRecent();
@@ -921,7 +914,7 @@ function openDefEditor(idx){
 /* ---------- export ---------- */
 document.getElementById('exportBtn').addEventListener('click', ()=>{
   if(PLAYS.length===0){ alert('No plays to export yet.'); return; }
-  const cols = ['ts','quarter','clockStr','down','distance','ytg','scoreUs','scoreThem','personnel','playType','blitz','coverage','outcome','yardsGained','epBefore','epAfter','epa'];
+  const cols = ['ts','quarter','clockStr','down','distance','ytg','scoreUs','scoreThem','personnel','playType','front','stunt','pressure','coverage','outcome','yardsGained','epBefore','epAfter','epa'];
   const lines = [cols.join(',')];
   PLAYS.forEach(p=>{
     lines.push(cols.map(c=>{
