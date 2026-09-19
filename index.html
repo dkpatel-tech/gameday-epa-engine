@@ -114,26 +114,29 @@
 
   @media print{
     header, .no-print, #view-log, #view-tendencies, #view-log-list, #view-export { display:none !important; }
-    body{ background:#fff; color:#111; padding:0; }
+    body{ background:#fff; color:#111; padding:0; font-size:10px; }
     main{ padding:0; max-width:none; }
     #view-report{ display:block !important; }
-    .card{ border:1px solid #ccc; background:#fff; break-inside:avoid; box-shadow:none; }
+    .card{ border:1px solid #ccc; background:#fff; box-shadow:none; padding:10px; }
     .card h2{ color:#111; }
-    table{ font-size:11px; }
     th{ color:#333; }
-    td, th{ border-bottom:1px solid #ccc; }
-    .report-header{ text-align:center; margin-bottom:14px; }
-    .report-header h1{ margin:0; font-size:20px; color:#3a1660; }
-    .report-header p{ margin:2px 0 0; font-size:12px; color:#555; }
+    td, th{ border-bottom:1px solid #ddd; }
+    .report-header{ text-align:center; margin-bottom:8px; }
+    .report-header h1{ margin:0; font-size:16px; color:#3a1660; }
+    .report-header p{ margin:2px 0 0; font-size:9px; color:#555; }
+    .report-grid{ column-count:2; column-gap:16px; }
+    .report-block{ break-inside:avoid; margin-bottom:8px; }
+    .report-block h3{ font-size:10px; margin:0 0 4px; color:#333; }
+    .report-block table{ font-size:8px; width:100%; }
+    .report-block th, .report-block td{ padding:2px 3px; }
   }
-  .report-section{ margin-bottom:4px; }
-  .report-section h3{ font-size:13px; margin:0 0 8px; color:var(--text-dim); text-align:center; }
+  .report-grid{ display:block; }
+  .report-block{ margin-bottom:14px; }
+  .report-block h3{ font-size:13px; margin:0 0 8px; color:var(--text-dim); text-align:center; }
+  .report-block table{ font-size:12px; }
   .report-header{ text-align:center; margin-bottom:16px; }
   .report-header h1{ margin:0; font-size:19px; color:var(--purple-bright); }
   .report-header p{ margin:2px 0 0; font-size:12px; color:var(--text-faint); }
-  .rank-row{ display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px; }
-  .rank-row:last-child{ border-bottom:none; }
-  .rank-row .rk{ color:var(--text-faint); width:20px; display:inline-block; }
 </style>
 </head>
 <body>
@@ -292,9 +295,13 @@
     <div class="card no-print">
       <div class="flex-between">
         <div>
-          <h2 style="margin:0;">Halftime Report</h2>
-          <p class="footnote" style="margin-top:4px;">Top/bottom personnel groupings by EPA, plus 3rd-down coverage tendencies. Tap Print, then choose "Save as PDF."</p>
+          <h2 style="margin:0;">Game Report</h2>
+          <p class="footnote" style="margin-top:4px;">Full tendencies breakdown, formatted to print on one page. Tap Print, then choose "Save as PDF."</p>
         </div>
+      </div>
+      <div class="subtab" id="reportSubtab" style="margin-top:10px;">
+        <button data-r="half" class="on">Halftime</button>
+        <button data-r="full">Full Game</button>
       </div>
       <button class="submit-btn" id="printReportBtn" style="margin-top:10px;">Print / Save as PDF</button>
     </div>
@@ -695,68 +702,105 @@ function coverageBreakdown(rows){
   return entries.map(([k,v])=>`${k} &mdash; ${Math.round(100*v.length/known.length)}% (${v.length})`).join('<br>');
 }
 
+let REPORT_MODE = 'half';
+document.getElementById('reportSubtab').addEventListener('click', (e)=>{
+  if(e.target.tagName!=='BUTTON') return;
+  document.querySelectorAll('#reportSubtab button').forEach(b=>b.classList.remove('on'));
+  e.target.classList.add('on');
+  REPORT_MODE = e.target.dataset.r;
+  renderReport();
+});
+
+function reportPlays(){
+  if(REPORT_MODE==='half') return PLAYS.filter(p=>p.quarter==='1'||p.quarter==='2');
+  return PLAYS.slice();
+}
+
+function compactTable(groupEntries, labelHeader){
+  const withStats = groupEntries
+    .map(([k,v])=>({ label:k, ...statsFor(v) }))
+    .sort((a,b)=>b.avgEpa-a.avgEpa);
+  if(withStats.length===0) return `<div class="empty" style="padding:4px 0;">No plays yet</div>`;
+  const rows = withStats.map(r=>`<tr>
+    <td class="lbl">${r.label}</td>
+    <td class="num">${r.n}</td>
+    <td class="num">${r.avgYards===null?'&mdash;':(r.avgYards>=0?'+':'')+r.avgYards.toFixed(1)}</td>
+    <td class="num">${(r.avgEpa>=0?'+':'')+r.avgEpa.toFixed(2)}</td>
+    <td class="num">${r.successRate===null?'&mdash;':Math.round(r.successRate*100)+'%'}</td>
+  </tr>`).join('');
+  return `<table><thead><tr>
+    <th>${labelHeader}</th><th>N</th><th>Yds</th><th>EPA</th><th>Succ%</th>
+  </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 function renderReport(){
   const body = document.getElementById('reportBody');
-  if(PLAYS.length===0){
-    body.innerHTML = '<div class="card"><div class="empty">No plays logged yet.</div></div>';
+  const plays = reportPlays();
+  if(plays.length===0){
+    body.innerHTML = `<div class="card"><div class="empty">No plays logged yet${REPORT_MODE==='half'?' in the first half':''}.</div></div>`;
     return;
   }
 
   const now = new Date();
-  const last = PLAYS[PLAYS.length-1];
+  const last = plays[plays.length-1];
+  const title = REPORT_MODE==='half' ? 'Halftime Report' : 'Full Game Report';
 
-  // personnel ranking (require at least 2 plays to qualify for ranking)
-  const byPersonnel = groupBy(PLAYS, r=>r.personnel);
-  const ranked = [...byPersonnel.entries()]
-    .map(([k,v])=>({ personnel:k, ...statsFor(v) }))
-    .filter(r=>r.n>=2)
-    .sort((a,b)=>b.avgEpa-a.avgEpa);
-  const top3 = ranked.slice(0,3);
-  const bottom3 = ranked.slice(-3).reverse().filter(r=>!top3.includes(r));
-  const thin = [...byPersonnel.entries()].filter(([k,v])=>v.length<2).length;
+  const byPersonnel = [...groupBy(plays, r=>r.personnel).entries()];
+  const byPlayType = [...groupBy(plays, r=>r.playType).entries()];
+  const downLabel = {1:'1st',2:'2nd',3:'3rd',4:'4th'};
+  const byDownMap = groupBy(plays, r=>r.down);
+  const byDownEntries = [1,2,3,4].filter(d=>byDownMap.has(d)).map(d=>[downLabel[d], byDownMap.get(d)]);
 
-  const rankRow = (r,i)=>`<div class="rank-row">
-      <div><span class="rk">${i+1}.</span>${r.personnel} <span class="footnote">(n=${r.n})</span></div>
-      <div style="font-weight:700;" class="${r.avgEpa>0?'pos':(r.avgEpa<0?'neg':'')}">${r.avgEpa>=0?'+':''}${r.avgEpa.toFixed(2)}</div>
-    </div>`;
-
-  // 3rd down coverage tendencies
-  const thirdDowns = PLAYS.filter(r=>r.down===3);
+  const thirdDowns = plays.filter(r=>r.down===3);
   const ddGroups = groupBy(thirdDowns, r=>ddBucket(r.distance));
   const ddOrder = ['Short (1-2)','Medium (3-6)','Long (7+)'];
+  const ddRows = ddOrder.map(k=>{
+    const v = ddGroups.get(k);
+    if(!v) return '';
+    const s = statsFor(v);
+    const known = v.filter(r=>r.coverage!=='Pending');
+    let covText = '&mdash;';
+    if(known.length){
+      const m = groupBy(known, r=>r.coverage);
+      covText = [...m.entries()].sort((a,b)=>b[1].length-a[1].length).slice(0,2)
+        .map(([ck,cv])=>`${ck} ${Math.round(100*cv.length/known.length)}%`).join(', ');
+    }
+    return `<tr>
+      <td class="lbl">${k}</td>
+      <td class="num">${s.n}</td>
+      <td class="num">${(s.avgEpa>=0?'+':'')+s.avgEpa.toFixed(2)}</td>
+      <td class="num">${s.blitzRate===null?'&mdash;':Math.round(s.blitzRate*100)+'%'}</td>
+      <td>${covText}</td>
+    </tr>`;
+  }).join('');
+  const ddTable = `<table><thead><tr>
+      <th>Dist.</th><th>N</th><th>EPA</th><th>Blitz%</th><th>Coverage</th>
+    </tr></thead><tbody>${ddRows || '<tr><td colspan="5" class="empty">No 3rd-down plays yet</td></tr>'}</tbody></table>`;
 
   body.innerHTML = `
     <div class="card">
       <div class="report-header">
-        <h1>Halftime Report</h1>
-        <p>Through Q${last.quarter}, ${last.clockStr} &middot; ${PLAYS.length} plays logged &middot; generated ${now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
+        <h1>${title}</h1>
+        <p>Through Q${last.quarter}, ${last.clockStr} &middot; ${plays.length} plays &middot; generated ${now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
       </div>
-
-      <div class="report-section">
-        <h3>Top 3 personnel groupings by EPA</h3>
-        ${top3.length ? top3.map(rankRow).join('') : '<div class="empty" style="padding:6px 0;">Not enough plays per grouping yet (need 2+)</div>'}
+      <div class="report-grid">
+        <div class="report-block">
+          <h3>By personnel</h3>
+          ${compactTable(byPersonnel, 'Personnel')}
+        </div>
+        <div class="report-block">
+          <h3>By play type</h3>
+          ${compactTable(byPlayType, 'Play type')}
+        </div>
+        <div class="report-block">
+          <h3>By down</h3>
+          ${compactTable(byDownEntries, 'Down')}
+        </div>
+        <div class="report-block">
+          <h3>3rd down coverage tendencies</h3>
+          ${ddTable}
+        </div>
       </div>
-
-      <div class="report-section" style="margin-top:16px;">
-        <h3>Bottom 3 personnel groupings by EPA</h3>
-        ${bottom3.length ? bottom3.map((r,i)=>rankRow(r,ranked.indexOf(r))).join('') : '<div class="empty" style="padding:6px 0;">Not enough plays per grouping yet (need 2+)</div>'}
-      </div>
-      ${thin>0 ? `<p class="footnote" style="margin-top:8px;">${thin} grouping${thin>1?'s':''} logged with only 1 play &mdash; excluded from ranking until there's a second rep.</p>` : ''}
-    </div>
-
-    <div class="card">
-      <h3 style="font-size:13px; color:var(--text-dim); margin:0 0 10px; text-align:center;">3rd down defensive coverage tendencies</h3>
-      ${thirdDowns.length===0 ? '<div class="empty" style="padding:6px 0;">No 3rd-down plays logged yet.</div>' :
-        ddOrder.map(k=>{
-          const v = ddGroups.get(k);
-          if(!v) return '';
-          const s = statsFor(v);
-          return `<div style="margin-bottom:12px;">
-            <div style="font-weight:700; font-size:13px; margin-bottom:4px;">${k} &middot; n=${s.n} &middot; blitz ${s.blitzRate===null?'&mdash;':Math.round(s.blitzRate*100)+'%'}</div>
-            <div class="footnote" style="font-size:12px; color:var(--text-dim);">${coverageBreakdown(v)}</div>
-          </div>`;
-        }).join('')
-      }
     </div>
   `;
 }
