@@ -111,7 +111,7 @@
   .toggle-us{display:flex; gap:8px; margin-bottom:10px;}
 
   @media print{
-    header, .no-print, #view-log, #view-tendencies, #view-log-list, #view-export { display:none !important; }
+    header, .no-print, #view-log, #view-tendencies, #view-log-list, #view-export, #view-sheet { display:none !important; }
     body{ background:#fff; color:#111; padding:0; font-size:10px; }
     main{ padding:0; max-width:none; }
     #view-report{ display:block !important; }
@@ -136,6 +136,34 @@
   .report-header{ text-align:center; margin-bottom:16px; }
   .report-header h1{ margin:0; font-size:19px; color:var(--purple-bright); }
   .report-header p{ margin:2px 0 0; font-size:12px; color:var(--text-faint); }
+
+  /* ── Sheet tab styles ── */
+  .sheet-section { margin-bottom:14px; }
+  .sheet-section-hdr {
+    background: var(--purple-dim); color:#fff; font-size:12px; font-weight:700;
+    padding:6px 10px; border-radius:8px 8px 0 0; letter-spacing:.04em;
+  }
+  .sheet-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  .sheet-table th {
+    background:rgba(91,42,134,.15); color:var(--text-faint);
+    font-weight:700; font-size:10.5px; text-transform:uppercase;
+    letter-spacing:.04em; padding:6px 6px; text-align:center;
+    border:1px solid var(--line);
+  }
+  .sheet-table td { padding:7px 6px; border:1px solid var(--line); text-align:center; font-variant-numeric:tabular-nums; }
+  .sheet-table td.lbl { text-align:left; }
+  .sheet-stat-box {
+    display:flex; gap:10px; padding:10px; background:var(--panel);
+    border:1px solid var(--line); border-radius:0 0 8px 8px;
+  }
+  .sheet-stat-item { flex:1; text-align:center; }
+  .sheet-stat-item .big2 { font-size:26px; font-weight:800; line-height:1.1; }
+  .sheet-stat-item .lbl2 { font-size:10px; color:var(--text-faint); margin-top:3px; }
+  /* penalty detail panel */
+  #penaltyDetail { margin-top:10px; background:rgba(224,83,86,.07); border:1px solid rgba(224,83,86,.3); border-radius:8px; padding:12px; }
+  #penaltyDetail label { color:var(--text-faint); font-size:11px; margin-bottom:4px; display:block; margin-top:8px; }
+  #penaltyDetail label:first-child { margin-top:0; }
+
 </style>
 </head>
 <body>
@@ -149,6 +177,7 @@
     <button data-view="log-list">Play Log</button>
     <button data-view="report">Report</button>
     <button data-view="export">Export</button>
+    <button data-view="sheet">Sheet</button>
   </nav>
 </header>
 
@@ -214,6 +243,30 @@
       <label style="margin-top:12px;">Play type</label>
       <div class="chipset" id="playtypeChips"></div>
       <input id="playtypeCustom" type="text" placeholder="Or type a concept: Duo, Four Verts, Power..." style="margin-top:8px;">
+
+      <!-- Penalty detail — shown only when Penalty chip is active -->
+      <div id="penaltyDetail" style="display:none;">
+        <label>Who committed the penalty?</label>
+        <div class="seg" id="penWhoSeg">
+          <button data-v="them">Defense (them)</button>
+          <button data-v="us">Offense (us)</button>
+        </div>
+        <!-- shown only for defensive (them) penalties -->
+        <div id="penResultRow" style="display:block;">
+          <label style="margin-top:10px;">Result of enforcement</label>
+          <div class="seg" id="penResultSeg">
+            <button data-v="auto1st">Auto 1st Down</button>
+            <button data-v="replay">Replay the Down</button>
+          </div>
+        </div>
+        <label style="margin-top:10px;">Penalty yards</label>
+        <input id="penYardsInput" type="number" inputmode="numeric" placeholder="e.g. 15" style="width:100%;">
+        <label style="margin-top:10px;">Penalty ruling</label>
+        <div class="seg" id="penAcceptSeg">
+          <button data-v="accepted">Accepted</button>
+          <button data-v="declined">Declined</button>
+        </div>
+      </div>
     </div>
 
     <div class="card">
@@ -338,6 +391,11 @@
     </div>
   </section>
 
+
+  <!-- SHEET — live EPA Game Sheet mirror -->
+  <section id="view-sheet" class="view">
+    <div id="sheetBody"><div class="empty" style="padding:30px;">Log plays to see live stats.</div></div>
+  </section>
 </main>
 
 <script id="model-data" type="application/json">
@@ -390,6 +448,7 @@ document.querySelectorAll('header nav button').forEach(btn=>{
     if(btn.dataset.view==='tendencies') renderTendencies();
     if(btn.dataset.view==='log-list') renderFullLog();
     if(btn.dataset.view==='report') renderReport();
+    if(btn.dataset.view==='sheet') renderSheet();
   });
 });
 
@@ -418,8 +477,9 @@ function makeChips(containerId, options, multi=false){
     const chip = document.createElement('div');
     chip.className='chip'; chip.textContent=opt; chip.dataset.v=opt;
     chip.addEventListener('click', ()=>{
+      const wasOn = chip.classList.contains('on');
       if(!multi) el.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
-      chip.classList.toggle('on');
+      if(!wasOn) chip.classList.add('on');
     });
     el.appendChild(chip);
   });
@@ -427,9 +487,29 @@ function makeChips(containerId, options, multi=false){
 makeChips('personnelChips', [
   'ZE','ZE 81Y','T','ST 3 H 81 Y','T 81 F','ZE 18 F','T 18Z','SPD T','T 3Z',
   'ZE 88Y 80Z','ZE/T','T/ZE','ZE/SPD T','ZE 80Z','THUND','BEN','SPD T 80Z',
-  'T 80X 18Z','ZE 3H','ST 3 H 81Y','BEN 18Z','GOZ','SPDT 18Z','ZE 3F','ST 3 H'
+  'T 80X 18Z','ZE 3H','ST 3 H 81Y','BEN 18Z','GOZ','SPDT 18Z','ZE 3F','ST 3 H','ST','JU RH'
 ]);
 makeChips('playtypeChips', ['Run','Pass','RPO','Screen','PA Pass','Draw','Penalty']);
+
+/* show/hide penalty detail panel */
+document.getElementById('playtypeChips').addEventListener('click', ()=>{
+  setTimeout(()=>{
+    const active = document.querySelector('#playtypeChips .chip.on');
+    const isPenalty = active && active.dataset.v === 'Penalty';
+    document.getElementById('penaltyDetail').style.display = isPenalty ? 'block' : 'none';
+  }, 0);
+});
+wireSeg('penWhoSeg','them');
+wireSeg('penResultSeg','auto1st');
+wireSeg('penAcceptSeg','accepted');
+
+/* show/hide "Result of enforcement" row based on who committed the penalty */
+document.getElementById('penWhoSeg').addEventListener('click', ()=>{
+  setTimeout(()=>{
+    const who = segVal('penWhoSeg');
+    document.getElementById('penResultRow').style.display = who === 'them' ? 'block' : 'none';
+  }, 0);
+});
 
 function chipVal(containerId, customInputId){
   const on = document.getElementById(containerId).querySelector('.chip.on');
@@ -490,6 +570,13 @@ document.getElementById('logPlayBtn').addEventListener('click', ()=>{
   const timeSecsRem = parseClockToSecsRemHalf(quarter, clockStr);
   const scoreDiff = scoreUs - scoreThem;
 
+  /* derive playCategory for Sheet grouping (Run / Pass / Penalty / Other) */
+  const activeChip = document.querySelector('#playtypeChips .chip.on');
+  const rawChipV = activeChip ? activeChip.dataset.v : null;
+  let playCategory = 'Other';
+  if(rawChipV === 'Run' || rawChipV === 'Draw') playCategory = 'Run';
+  else if(rawChipV === 'Pass' || rawChipV === 'Screen' || rawChipV === 'PA Pass' || rawChipV === 'RPO') playCategory = 'Pass';
+  else if(rawChipV === 'Penalty') playCategory = 'Penalty';
   const personnel = chipVal('personnelChips') || 'Unlabeled';
   const playType = chipVal('playtypeChips','playtypeCustom') || 'Unlabeled';
   const front = document.getElementById('frontInput').value.trim();
@@ -504,7 +591,31 @@ document.getElementById('logPlayBtn').addEventListener('click', ()=>{
   let epAfter;
   let yardsGained = null, newYtgAfter = null;
 
-  if(outcome === 'td_off'){ epAfter = 7; }
+  /* ── Penalty branch ── */
+  if(playCategory === 'Penalty'){
+    const penWho      = segVal('penWhoSeg');      // 'them' | 'us'
+    const penYards    = parseFloat(document.getElementById('penYardsInput').value) || 0;
+    const penAccepted = segVal('penAcceptSeg');   // 'accepted' | 'declined'
+    const penResult = segVal('penResultSeg'); // 'auto1st' | 'replay' (only for them)
+    if(penAccepted === 'declined'){
+      epAfter = epBefore; // declined → no EPA change, replay same down
+    } else if(penWho === 'them'){
+      const newYtgPen = Math.max(1, ytg - penYards);
+      if(penResult === 'replay'){
+        // e.g. offsides / encroachment — replay same down from enforced spot
+        const newDist = Math.max(1, distance - penYards);
+        epAfter = expectedPoints({ timeSecsRem, yardsToGoal:newYtgPen, distance:Math.min(newDist,newYtgPen), down, scoreDiff });
+      } else {
+        // auto 1st down (holding, PI, etc.)
+        epAfter = expectedPoints({ timeSecsRem, yardsToGoal:newYtgPen, distance:Math.min(10,newYtgPen), down:1, scoreDiff });
+      }
+    } else {
+      // Offensive penalty → replay same down, lose yards
+      const newYtgPen = Math.min(99, ytg + penYards);
+      const newDist   = Math.min(distance + penYards, newYtgPen);
+      epAfter = expectedPoints({ timeSecsRem, yardsToGoal:newYtgPen, distance:newDist, down, scoreDiff });
+    }
+  } else if(outcome === 'td_off'){ epAfter = 7; }
   else if(outcome === 'td_def'){ epAfter = -7; }
   else if(outcome === 'safety'){ epAfter = -2; }
   else if(outcome === 'fg_good'){ epAfter = 3; }
@@ -530,7 +641,7 @@ document.getElementById('logPlayBtn').addEventListener('click', ()=>{
   const epa = epAfter - epBefore;
 
   const play = {
-    ts: Date.now(), quarter, clockStr, down, distance, ytg, scoreUs, scoreThem,
+    ts: Date.now(), quarter, clockStr, down, distance, ytg, scoreUs, scoreThem, playCategory,
     personnel, playType, front, stunt, pressure, coverage, outcome, yardsGained,
     epBefore: round3(epBefore), epAfter: round3(epAfter), epa: round3(epa)
   };
@@ -539,9 +650,188 @@ document.getElementById('logPlayBtn').addEventListener('click', ()=>{
 
   showEpaResult(play);
   renderRecent();
+  clearForm();
+  renderSheet();
 });
 
 function round3(x){ return Math.round(x*1000)/1000; }
+
+/* ── set a segmented control value programmatically ── */
+function segSetVal(segId, val){
+  const el = document.getElementById(segId);
+  if(!el) return;
+  el.querySelectorAll('button').forEach(b=>{ b.classList.toggle('on', b.dataset.v===String(val)); });
+}
+
+/* ── clear form fields and auto-advance down/distance after a play ── */
+function clearForm(){
+  // clear chips
+  document.querySelectorAll('#personnelChips .chip, #playtypeChips .chip').forEach(c=>c.classList.remove('on'));
+  document.getElementById('playtypeCustom').value = '';
+  // clear their-look fields
+  ['frontInput','stuntInput','pressureInput','coverageInput'].forEach(id=>{
+    const el = document.getElementById(id); if(el) el.value='';
+  });
+  // clear result / outcome
+  document.getElementById('yardsGainedInput').value = '';
+  document.getElementById('newYtgInput').value = '';
+  document.getElementById('outcomeSelect').value = 'normal';
+  document.getElementById('normalField').style.display = 'block';
+  document.getElementById('flipField').style.display = 'none';
+  // hide penalty panel
+  document.getElementById('penaltyDetail').style.display = 'none';
+  document.getElementById('penYardsInput').value = '';
+  wireSeg('penWhoSeg','them');
+  wireSeg('penResultSeg','auto1st');
+  document.getElementById('penResultRow').style.display = 'block';
+  wireSeg('penAcceptSeg','accepted');
+
+  // auto-advance down/distance/ytg from last play (if normal outcome)
+  const last = PLAYS[PLAYS.length-1];
+  if(last && last.playCategory !== 'Penalty' && last.outcome==='normal' && last.yardsGained!==null && !isNaN(last.yardsGained)){
+    const prog = progressDown(last.down, last.distance, last.ytg, last.yardsGained);
+    if(!prog.turnover){
+      segSetVal('downSeg', String(prog.down));
+      document.getElementById('distanceInput').value = prog.distance;
+      document.getElementById('ytgInput').value = prog.yardsToGoal;
+    }
+  }
+  // if last play was a defensive penalty (them), set 1st down
+  if(last && last.playCategory === 'Penalty' && last.epa !== null){
+    // just reset to 1st and 10 as a default — coach will enter actual spot
+    segSetVal('downSeg','1');
+    document.getElementById('distanceInput').value = 10;
+  }
+}
+
+/* ── renderSheet: live EPA Game Sheet mirror ── */
+function renderSheet(){
+  const body = document.getElementById('sheetBody');
+  if(!body) return;
+  if(PLAYS.length===0){
+    body.innerHTML = '<div class="empty" style="padding:30px;">Log plays to see live stats.</div>';
+    return;
+  }
+
+  /* helper: format EPA cell with sign + color class */
+  function fmtEpa(val){
+    if(val===null||isNaN(val)) return '<td>&mdash;</td>';
+    const cls = val>0?'pos':val<0?'neg':'';
+    return `<td class="${cls}">${val>=0?'+':''}${val.toFixed(2)}</td>`;
+  }
+  function fmtSR(val){
+    if(val===null||val===undefined) return '<td>&mdash;</td>';
+    return `<td>${Math.round(val*100)}%</td>`;
+  }
+
+  /* ── PERSONNEL ── sorted by EPA desc */
+  const persMap = groupBy(PLAYS, r=>r.personnel);
+  const persRows = [...persMap.entries()]
+    .map(([k,v])=>({ label:k, ...statsFor(v) }))
+    .sort((a,b)=>b.avgEpa-a.avgEpa);
+  const persHtml = persRows.map((r,i)=>`<tr>
+    <td class="lbl" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.label}</td>
+    ${fmtEpa(r.avgEpa)}
+    ${fmtSR(r.successRate)}
+    <td>${r.n}</td>
+  </tr>`).join('');
+
+  /* ── RUN CALLS — top 3 by EPA (exclude Penalty) ── */
+  const runPlays = PLAYS.filter(p=>p.playCategory==='Run'||
+    (p.playCategory!=='Penalty' && p.playCategory!=='Pass' &&
+     ['Run','Draw'].includes(p.playType)));
+  const runPlays2 = PLAYS.filter(p=>p.playCategory==='Run');
+  const runMap = groupBy(runPlays2, r=>r.playType);
+  const runRows = [...runMap.entries()]
+    .map(([k,v])=>({ label:k, ...statsFor(v) }))
+    .sort((a,b)=>b.avgEpa-a.avgEpa)
+    .slice(0,3);
+
+  /* ── PASS CALLS — top 3 by EPA ── */
+  const passPlays = PLAYS.filter(p=>p.playCategory==='Pass');
+  const passMap = groupBy(passPlays, r=>r.playType);
+  const passRows = [...passMap.entries()]
+    .map(([k,v])=>({ label:k, ...statsFor(v) }))
+    .sort((a,b)=>b.avgEpa-a.avgEpa)
+    .slice(0,3);
+
+  function callRowsHtml(rows){
+    if(rows.length===0) return '<tr><td colspan="3" class="empty" style="font-size:11px;">No plays yet</td></tr>';
+    return rows.map(r=>`<tr>
+      <td class="lbl" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.label}</td>
+      ${fmtEpa(r.avgEpa)}
+      ${fmtSR(r.successRate)}
+    </tr>`).join('');
+  }
+
+  /* ── 3RD DOWN ── */
+  const thirdDowns = PLAYS.filter(p=>p.down===3 && p.playCategory!=='Penalty');
+  let thirdEpa = null, thirdConv = null;
+  if(thirdDowns.length>0){
+    const s = statsFor(thirdDowns);
+    thirdEpa = s.avgEpa;
+    // conversion = td OR (normal outcome AND yards gained >= distance)
+    const convElig = thirdDowns.filter(p=>p.outcome!=='eoh'&&p.outcome!=='punt');
+    if(convElig.length>0){
+      const convCount = convElig.filter(p=>
+        p.outcome==='td_off' || p.outcome==='fg_good' ||
+        (p.outcome==='normal' && p.yardsGained!==null && p.yardsGained>=p.distance)
+      ).length;
+      thirdConv = convCount / convElig.length;
+    }
+  }
+
+  const thirdHtml = `
+    <div style="display:flex; gap:10px; padding:10px; background:var(--panel); border:1px solid var(--line); border-radius:0 0 8px 8px;">
+      <div style="flex:1; text-align:center;">
+        <div class="big2 ${thirdEpa===null?'':(thirdEpa>=0?'pos':'neg')}" style="font-size:26px; font-weight:800;">
+          ${thirdEpa===null?'&mdash;':(thirdEpa>=0?'+':'')+thirdEpa.toFixed(2)}
+        </div>
+        <div style="font-size:10px; color:var(--text-faint); margin-top:3px;">EPA / play &nbsp;(n=${thirdDowns.length})</div>
+      </div>
+      <div style="flex:1; text-align:center;">
+        <div style="font-size:26px; font-weight:800; color:${thirdConv===null?'inherit':(thirdConv>=0.5?'var(--good)':'var(--bad)')}" >
+          ${thirdConv===null?'&mdash;':Math.round(thirdConv*100)+'%'}
+        </div>
+        <div style="font-size:10px; color:var(--text-faint); margin-top:3px;">Conv %</div>
+      </div>
+    </div>`;
+
+  body.innerHTML = `
+    <!-- Personnel -->
+    <div class="card sheet-section">
+      <div class="sheet-section-hdr">PERSONNEL</div>
+      <table class="sheet-table">
+        <thead><tr><th class="lbl">Group</th><th>EPA/play</th><th>Success%</th><th>Plays</th></tr></thead>
+        <tbody>${persHtml || '<tr><td colspan="4" class="empty">—</td></tr>'}</tbody>
+      </table>
+    </div>
+
+    <!-- Run / Pass side by side -->
+    <div style="display:flex; gap:10px; margin-bottom:14px;">
+      <div style="flex:1; background:var(--panel); border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+        <div class="sheet-section-hdr">TOP RUN CALLS</div>
+        <table class="sheet-table">
+          <thead><tr><th class="lbl">Call</th><th>EPA</th><th>SR%</th></tr></thead>
+          <tbody>${callRowsHtml(runRows)}</tbody>
+        </table>
+      </div>
+      <div style="flex:1; background:var(--panel); border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+        <div class="sheet-section-hdr">TOP PASS CALLS</div>
+        <table class="sheet-table">
+          <thead><tr><th class="lbl">Call</th><th>EPA</th><th>SR%</th></tr></thead>
+          <tbody>${callRowsHtml(passRows)}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 3rd down -->
+    <div class="sheet-section">
+      <div class="sheet-section-hdr" style="border-radius:8px 8px 0 0;">3RD DOWN</div>
+      ${thirdHtml}
+    </div>
+  `;
+}
 
 function showEpaResult(play){
   const cls = play.epa > 0 ? 'pos' : (play.epa < 0 ? 'neg' : '');
