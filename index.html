@@ -239,6 +239,7 @@
       <h2>Our call</h2>
       <label>Personnel</label>
       <div class="chipset" id="personnelChips"></div>
+      <input id="personnelCustom" type="text" placeholder="Or type a grouping..." style="margin-top:8px;">
 
       <label style="margin-top:12px;">Play type</label>
       <div class="chipset" id="playtypeChips"></div>
@@ -485,9 +486,7 @@ function makeChips(containerId, options, multi=false){
   });
 }
 makeChips('personnelChips', [
-  'ZE','ZE 81Y','T','ST 3 H 81 Y','T 81 F','ZE 18 F','T 18Z','SPD T','T 3Z',
-  'ZE 88Y 80Z','ZE/T','T/ZE','ZE/SPD T','ZE 80Z','THUND','BEN','SPD T 80Z',
-  'T 80X 18Z','ZE 3H','ST 3 H 81Y','BEN 18Z','GOZ','SPDT 18Z','ZE 3F','ST 3 H','ST','JU RH'
+  'ZE','T','SPD T','ZE/T','T/ZE','ZE/SPD T','THUND','BEN','GOZ','ST','JU RH','KAT'
 ]);
 makeChips('playtypeChips', ['Run','Pass','RPO','Screen','PA Pass','Draw','Penalty']);
 
@@ -577,7 +576,7 @@ document.getElementById('logPlayBtn').addEventListener('click', ()=>{
   if(rawChipV === 'Run' || rawChipV === 'Draw') playCategory = 'Run';
   else if(rawChipV === 'Pass' || rawChipV === 'Screen' || rawChipV === 'PA Pass' || rawChipV === 'RPO') playCategory = 'Pass';
   else if(rawChipV === 'Penalty') playCategory = 'Penalty';
-  const personnel = chipVal('personnelChips') || 'Unlabeled';
+  const personnel = chipVal('personnelChips','personnelCustom') || 'Unlabeled';
   const playType = chipVal('playtypeChips','playtypeCustom') || 'Unlabeled';
   const front = document.getElementById('frontInput').value.trim();
   const stunt = document.getElementById('stuntInput').value.trim();
@@ -668,6 +667,7 @@ function clearForm(){
   // clear chips
   document.querySelectorAll('#personnelChips .chip, #playtypeChips .chip').forEach(c=>c.classList.remove('on'));
   document.getElementById('playtypeCustom').value = '';
+  document.getElementById('personnelCustom').value = '';
   // clear their-look fields
   ['frontInput','stuntInput','pressureInput','coverageInput'].forEach(id=>{
     const el = document.getElementById(id); if(el) el.value='';
