@@ -152,6 +152,10 @@
   }
   .sheet-table td { padding:7px 6px; border:1px solid var(--line); text-align:center; font-variant-numeric:tabular-nums; }
   .sheet-table td.lbl { text-align:left; }
+  .hide-call{background:none; border:none; color:var(--text-faint); font-size:15px; line-height:1; padding:2px 6px; margin-right:4px; cursor:pointer; border-radius:4px;}
+  .hide-call:hover{color:var(--bad); background:var(--bg2);}
+  .hidden-calls{display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:-6px 0 14px; font-size:11.5px; color:var(--text-faint);}
+  .hidden-calls button{background:var(--bg2); border:1px solid var(--line); color:var(--text-dim); border-radius:14px; padding:4px 10px; font-size:11.5px; font-weight:600; cursor:pointer;}
   .sheet-stat-box {
     display:flex; gap:10px; padding:10px; background:var(--panel);
     border:1px solid var(--line); border-radius:0 0 8px 8px;
@@ -438,6 +442,15 @@ const STORE_KEY = 'epa_engine_plays_v1';
 function loadPlays(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY)) || []; }catch(e){ return []; } }
 function savePlays(p){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(p)); }catch(e){} }
 let PLAYS = loadPlays();
+/* play types hidden from the Top Run / Top Pass calls (kept across games) */
+const HIDDEN_KEY = 'epa_engine_hidden_calls_v1';
+function loadHidden(){ try{ return JSON.parse(localStorage.getItem(HIDDEN_KEY)) || []; }catch(e){ return []; } }
+function saveHidden(h){ try{ localStorage.setItem(HIDDEN_KEY, JSON.stringify(h)); }catch(e){} }
+let HIDDEN_CALLS = loadHidden();
+function callKey(label){ return String(label||'').trim().toLowerCase(); }
+function isHiddenCall(label){ const k=callKey(label); return HIDDEN_CALLS.some(h=>callKey(h)===k); }
+function hideCall(label){ if(!isHiddenCall(label)){ HIDDEN_CALLS.push(String(label).trim()); saveHidden(HIDDEN_CALLS); } renderSheet(); }
+function unhideCall(label){ const k=callKey(label); HIDDEN_CALLS = HIDDEN_CALLS.filter(h=>callKey(h)!==k); saveHidden(HIDDEN_CALLS); renderSheet(); }
 
 /* ---------- nav ---------- */
 document.querySelectorAll('header nav button').forEach(btn=>{
@@ -486,7 +499,7 @@ function makeChips(containerId, options, multi=false){
   });
 }
 makeChips('personnelChips', [
-  'ZE','T','SPD T','ZE/T','T/ZE','ZE/SPD T','THUND','BEN','GOZ','ST','JU RH','KAT'
+  'ZE','T','SPD T','ZE/T','T/ZE','ZE/SPD T','THUND','BEN','GOZ','ST','JU RH','KAT','UNI'
 ]);
 makeChips('playtypeChips', ['Run','Pass','RPO','Screen','PA Pass','Draw','Penalty']);
 
@@ -743,6 +756,7 @@ function renderSheet(){
   const runPlays2 = PLAYS.filter(p=>p.playCategory==='Run');
   const runMap = groupBy(runPlays2, r=>r.playType);
   const runRows = [...runMap.entries()]
+    .filter(([k])=>!isHiddenCall(k))
     .map(([k,v])=>({ label:k, ...statsFor(v) }))
     .sort((a,b)=>b.avgEpa-a.avgEpa)
     .slice(0,3);
@@ -751,6 +765,7 @@ function renderSheet(){
   const passPlays = PLAYS.filter(p=>p.playCategory==='Pass');
   const passMap = groupBy(passPlays, r=>r.playType);
   const passRows = [...passMap.entries()]
+    .filter(([k])=>!isHiddenCall(k))
     .map(([k,v])=>({ label:k, ...statsFor(v) }))
     .sort((a,b)=>b.avgEpa-a.avgEpa)
     .slice(0,3);
@@ -758,11 +773,16 @@ function renderSheet(){
   function callRowsHtml(rows){
     if(rows.length===0) return '<tr><td colspan="3" class="empty" style="font-size:11px;">No plays yet</td></tr>';
     return rows.map(r=>`<tr>
-      <td class="lbl" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.label}</td>
+      <td class="lbl" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><button class="hide-call" data-hide="${escAttr(r.label)}" title="Hide this call from the top 3" aria-label="Hide ${escAttr(r.label)}">&times;</button>${r.label}</td>
       ${fmtEpa(r.avgEpa)}
       ${fmtSR(r.successRate)}
     </tr>`).join('');
   }
+
+  function escAttr(v){ return String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+  const hiddenHtml = HIDDEN_CALLS.length===0 ? '' :
+    `<div class="hidden-calls"><span>Hidden from top 3 (tap to restore):</span>${
+      HIDDEN_CALLS.map(k=>`<button data-unhide="${escAttr(k)}">${escAttr(k)} &#8634;</button>`).join('')}</div>`;
 
   /* ── 3RD DOWN ── */
   const thirdDowns = PLAYS.filter(p=>p.down===3 && p.playCategory!=='Penalty');
@@ -825,12 +845,16 @@ function renderSheet(){
       </div>
     </div>
 
+    ${hiddenHtml}
+
     <!-- 3rd down -->
     <div class="sheet-section">
       <div class="sheet-section-hdr" style="border-radius:8px 8px 0 0;">3RD DOWN</div>
       ${thirdHtml}
     </div>
   `;
+  body.querySelectorAll('[data-hide]').forEach(b=>b.addEventListener('click',()=>hideCall(b.dataset.hide)));
+  body.querySelectorAll('[data-unhide]').forEach(b=>b.addEventListener('click',()=>unhideCall(b.dataset.unhide)));
 }
 
 function showEpaResult(play){
