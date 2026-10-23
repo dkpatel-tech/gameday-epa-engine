@@ -103,6 +103,11 @@
   .row-recent .meta{color:var(--text-faint); font-size:11.5px;}
   .badge{display:inline-block; padding:2px 7px; border-radius:5px; font-size:10.5px; font-weight:700; margin-left:5px;}
   .badge.pending{background:rgba(224,179,86,.18); color:var(--warn);}
+  .edit-banner{display:none; position:sticky; top:0; z-index:5; margin-bottom:12px; padding:10px 12px; border-radius:10px; background:rgba(224,179,86,.16); border:1px solid var(--warn); color:var(--text); font-size:13px; align-items:center; justify-content:space-between; gap:10px;}
+  .edit-banner.on{display:flex;}
+  .cancel-edit-btn{display:none; width:100%; margin-top:8px;}
+  body.editing .cancel-edit-btn{display:block;}
+  body.editing #logPlayBtn{background:var(--warn); color:#1b1230;}
   .del-btn{background:none;border:none;color:var(--bad);font-size:12px;cursor:pointer;padding:4px 8px;}
   .flex-between{display:flex; justify-content:space-between; align-items:center;}
   .small-btn{padding:8px 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg2); color:var(--text); font-size:12.5px; font-weight:600; cursor:pointer;}
@@ -190,6 +195,11 @@
 
   <!-- LOG PLAY -->
   <section id="view-log" class="view active">
+
+    <div class="edit-banner" id="editBanner" role="status">
+      <div id="editBannerText">Editing a play</div>
+      <button class="small-btn" id="editCancelTop">Cancel</button>
+    </div>
 
     <div class="card">
       <h2>Situation</h2>
@@ -327,6 +337,7 @@
     </div>
 
     <button class="submit-btn" id="logPlayBtn">Log play &amp; compute EPA</button>
+    <button class="small-btn cancel-edit-btn" id="editCancelBottom">Cancel edit</button>
 
     <div id="epaOut"></div>
 
@@ -702,8 +713,29 @@ document.getElementById('logPlayBtn').addEventListener('click', ()=>{
   const play = {
     ts: Date.now(), quarter, clockStr, down, distance, ytg, scoreUs, scoreThem, playCategory,
     personnel, playType, front, stunt, pressure, coverage, outcome, yardsGained,
-    epBefore: round3(epBefore), epAfter: round3(epAfter), epa: round3(epa)
+    epBefore: round3(epBefore), epAfter: round3(epAfter), epa: round3(epa),
+    playChip: rawChipV, newYtgAfter
   };
+  if(playCategory === 'Penalty'){
+    play.penWho = segVal('penWhoSeg');
+    play.penYards = parseFloat(document.getElementById('penYardsInput').value) || 0;
+    play.penAccepted = segVal('penAcceptSeg');
+    play.penResult = segVal('penResultSeg');
+  }
+
+  /* editing an existing play: replace it in place, keep its original timestamp */
+  if(EDIT_IDX !== null && PLAYS[EDIT_IDX]){
+    play.ts = PLAYS[EDIT_IDX].ts;
+    play.editedAt = Date.now();
+    PLAYS[EDIT_IDX] = play;
+    savePlays(PLAYS);
+    finishEdit();
+    showEpaResult(play);
+    document.getElementById('epaOut').insertAdjacentHTML('afterbegin','<div class="footnote" style="text-align:center; margin-bottom:4px;">Play updated</div>');
+    renderRecent(); renderSheet(); renderFullLog(); renderTendencies();
+    return;
+  }
+
   PLAYS.push(play);
   savePlays(PLAYS);
 
@@ -928,9 +960,13 @@ function renderRecent(){
         <div>${p.personnel} &middot; ${p.playType}</div>
         <div class="meta">Q${p.quarter} ${p.clockStr} &middot; ${p.down}${ordSuf(p.down)} &amp; ${p.distance} &middot; ${theirLookSummary(p)}</div>
       </div>
-      <div class="${cls}" style="font-weight:700;">${sign}${p.epa.toFixed(2)}</div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <div class="${cls}" style="font-weight:700;">${sign}${p.epa.toFixed(2)}</div>
+        <button class="small-btn" data-edit="${PLAYS.indexOf(p)}">Edit</button>
+      </div>
     </div>`;
   }).join('');
+  list.querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>startEdit(parseInt(b.dataset.edit,10))));
 }
 function ordSuf(n){ return n===1?'st':n===2?'nd':n===3?'rd':'th'; }
 function needsDefense(p){ return !p.front && !p.stunt && !p.pressure && !p.coverage; }
@@ -1205,6 +1241,7 @@ function renderFullLog(){
         </div>
         <div style="display:flex; align-items:center; gap:6px;">
           <div class="${cls}" style="font-weight:700;">${sign}${p.epa.toFixed(2)}</div>
+          <button class="small-btn edit-btn" data-idx="${realIdx}">Edit</button>
           <button class="small-btn def-btn" data-idx="${realIdx}">Def</button>
           <button class="del-btn" data-idx="${realIdx}">&times;</button>
         </div>
@@ -1216,13 +1253,21 @@ function renderFullLog(){
 
   body.querySelectorAll('.del-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
-      PLAYS.splice(parseInt(btn.dataset.idx,10),1);
+      const di = parseInt(btn.dataset.idx,10);
+      if(EDIT_IDX !== null){
+        if(di === EDIT_IDX) finishEdit();
+        else if(di < EDIT_IDX) EDIT_IDX--;
+      }
+      PLAYS.splice(di,1);
       savePlays(PLAYS);
       renderFullLog();
       renderRecent();
     });
   });
 
+  body.querySelectorAll('.edit-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=> startEdit(parseInt(btn.dataset.idx,10)));
+  });
   body.querySelectorAll('.def-btn').forEach(btn=>{
     btn.addEventListener('click', ()=> openDefEditor(parseInt(btn.dataset.idx,10)));
   });
@@ -1297,6 +1342,84 @@ document.getElementById('clearBtn').addEventListener('click', ()=>{
   savePlays(PLAYS);
   renderFullLog(); renderRecent(); renderTendencies();
 });
+
+/* ---------- edit a logged play ---------- */
+let EDIT_IDX = null;
+let EDIT_SNAPSHOT = null;
+const PERSONNEL_CHIPS = [...document.querySelectorAll('#personnelChips .chip')].map(c=>c.dataset.v);
+const PLAYTYPE_CHIPS  = [...document.querySelectorAll('#playtypeChips .chip')].map(c=>c.dataset.v);
+function setChip(containerId, val){
+  document.querySelectorAll(`#${containerId} .chip`).forEach(c=>c.classList.toggle('on', c.dataset.v===val));
+}
+function setVal(id, v){ const el=document.getElementById(id); if(el) el.value = (v===null||v===undefined||(typeof v==='number'&&isNaN(v))) ? '' : v; }
+function snapshotSituation(){
+  return { quarter: segVal('quarterSeg'), down: segVal('downSeg'),
+    distance: document.getElementById('distanceInput').value, ytg: document.getElementById('ytgInput').value,
+    clock: document.getElementById('clockInput').value, us: document.getElementById('scoreUsInput').value,
+    them: document.getElementById('scoreThemInput').value };
+}
+function restoreSituation(sn){
+  if(!sn) return;
+  segSetVal('quarterSeg', sn.quarter); segSetVal('downSeg', sn.down);
+  setVal('distanceInput', sn.distance); setVal('ytgInput', sn.ytg); setVal('clockInput', sn.clock);
+  setVal('scoreUsInput', sn.us); setVal('scoreThemInput', sn.them);
+}
+function startEdit(idx){
+  const p = PLAYS[idx]; if(!p) return;
+  if(EDIT_IDX === null) EDIT_SNAPSHOT = snapshotSituation();
+  EDIT_IDX = idx;
+  // situation
+  segSetVal('quarterSeg', p.quarter); segSetVal('downSeg', String(p.down));
+  setVal('distanceInput', p.distance); setVal('ytgInput', p.ytg); setVal('clockInput', p.clockStr || '');
+  setVal('scoreUsInput', p.scoreUs); setVal('scoreThemInput', p.scoreThem);
+  // personnel
+  if(PERSONNEL_CHIPS.includes(p.personnel)){ setChip('personnelChips', p.personnel); setVal('personnelCustom',''); }
+  else { setChip('personnelChips', null); setVal('personnelCustom', p.personnel==='Unlabeled' ? '' : p.personnel); }
+  // play type (chip decides run/pass/penalty category; custom text is the call name)
+  let chip = p.playChip || (PLAYTYPE_CHIPS.includes(p.playType) ? p.playType :
+             p.playCategory==='Run' ? 'Run' : p.playCategory==='Pass' ? 'Pass' : p.playCategory==='Penalty' ? 'Penalty' : null);
+  setChip('playtypeChips', chip);
+  setVal('playtypeCustom', (PLAYTYPE_CHIPS.includes(p.playType) || p.playType==='Unlabeled') ? '' : p.playType);
+  // their look
+  setVal('frontInput', p.front); setVal('stuntInput', p.stunt); setVal('pressureInput', p.pressure); setVal('coverageInput', p.coverage);
+  // result
+  outcomeSelect.value = p.outcome || 'normal';
+  outcomeSelect.dispatchEvent(new Event('change'));
+  setVal('yardsGainedInput', p.yardsGained);
+  setVal('newYtgInput', p.newYtgAfter);
+  // penalty
+  const isPen = chip === 'Penalty';
+  document.getElementById('penaltyDetail').style.display = isPen ? 'block' : 'none';
+  segSetVal('penWhoSeg', p.penWho || 'them');
+  segSetVal('penResultSeg', p.penResult || 'auto1st');
+  segSetVal('penAcceptSeg', p.penAccepted || 'accepted');
+  setVal('penYardsInput', isPen && p.penYards ? p.penYards : '');
+  document.getElementById('penResultRow').style.display = (p.penWho || 'them') === 'them' ? 'block' : 'none';
+  // UI
+  document.body.classList.add('editing');
+  document.getElementById('editBanner').classList.add('on');
+  document.getElementById('editBannerText').innerHTML =
+    `<b>Editing play #${idx+1}</b> &middot; Q${p.quarter} ${p.clockStr||''} &middot; ${p.down}${ordSuf(p.down)}&amp;${p.distance} &middot; ${p.personnel}/${p.playType}. Fix anything, then tap Save.`;
+  document.getElementById('logPlayBtn').textContent = 'Save changes & recompute EPA';
+  document.getElementById('epaOut').innerHTML = '';
+  document.querySelector('header nav button[data-view="log"]').click();
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+function finishEdit(){
+  const wasLast = EDIT_IDX !== null && EDIT_IDX === PLAYS.length-1;
+  EDIT_IDX = null;
+  document.body.classList.remove('editing');
+  document.getElementById('editBanner').classList.remove('on');
+  document.getElementById('logPlayBtn').innerHTML = 'Log play &amp; compute EPA';
+  // put the situation back to where the next snap was; if the most recent play
+  // was edited, let clearForm re-advance down/distance from the corrected play
+  if(wasLast){ restoreSituation(EDIT_SNAPSHOT); clearForm(); }
+  else { clearForm(); restoreSituation(EDIT_SNAPSHOT); }
+  EDIT_SNAPSHOT = null;
+}
+function cancelEdit(){ finishEdit(); document.getElementById('epaOut').innerHTML = ''; }
+document.getElementById('editCancelTop').addEventListener('click', cancelEdit);
+document.getElementById('editCancelBottom').addEventListener('click', cancelEdit);
 
 /* ---------- past games ---------- */
 (function(){ const d=document.getElementById('saveDate'); if(d && !d.value) d.value=new Date().toISOString().slice(0,10); })();
