@@ -182,6 +182,7 @@
     <button data-view="report">Report</button>
     <button data-view="export">Export</button>
     <button data-view="sheet">Sheet</button>
+    <button data-view="games">Past Games</button>
   </nav>
 </header>
 
@@ -387,6 +388,15 @@
       <button class="small-btn danger" id="clearBtn" style="width:100%;">Clear all logged plays</button>
     </div>
     <div class="card">
+      <h2>End of game</h2>
+      <p class="footnote">Saves every play from this game to Past Games, then clears the board so the next game starts from scratch.</p>
+      <div class="row">
+        <div><label for="saveOpp">Opponent</label><input id="saveOpp" type="text" placeholder="e.g. Baylor"></div>
+        <div><label for="saveDate">Date</label><input id="saveDate" type="date"></div>
+      </div>
+      <button class="submit-btn" id="saveGameBtn" style="margin-top:10px;">Save game &amp; start new</button>
+    </div>
+    <div class="card">
       <h2>About this build</h2>
       <p class="footnote">
         EPA is computed from the real cfbfastR/sportsdataverse-py <code>ep_model.ubj</code> expected-points model (XGBoost, multi:softprob, 7-class next-score target), ported tree-for-tree into this page &mdash; verified against the model's own predictions on random test states (max probability deviation ~7e-7). Nothing is approximated on the down/distance/field-position/time/score axis.
@@ -400,6 +410,37 @@
   <!-- SHEET — live EPA Game Sheet mirror -->
   <section id="view-sheet" class="view">
     <div id="sheetBody"><div class="empty" style="padding:30px;">Log plays to see live stats.</div></div>
+  </section>
+
+  <!-- PAST GAMES — saved games + multi-game play-call history -->
+  <section id="view-games" class="view">
+    <div class="card">
+      <div class="flex-between">
+        <h2 style="margin:0;">Saved games</h2>
+        <div style="display:flex; gap:6px;">
+          <button class="small-btn" id="gamesAllBtn">All</button>
+          <button class="small-btn" id="gamesNoneBtn">None</button>
+        </div>
+      </div>
+      <p class="footnote" style="margin-top:4px;">Check the games to include. The tables below combine every checked game.</p>
+      <div id="gamesList" style="margin-top:8px;"></div>
+    </div>
+    <div class="card">
+      <div class="subtab" id="gamesSubtab">
+        <button data-g="playtype" class="on">By play call</button>
+        <button data-g="personnel">By personnel</button>
+        <button data-g="down">By down</button>
+      </div>
+      <p class="footnote" style="margin:8px 0 0;">Tap a row to see that call game by game.</p>
+      <div id="gamesBody" style="margin-top:8px;"></div>
+    </div>
+    <div class="card">
+      <h2>Backup</h2>
+      <p class="footnote">Saved games live on this device only. Download a backup every so often, and use Import to move games to another tablet or phone.</p>
+      <button class="small-btn" id="gamesBackupBtn" style="width:100%; margin-bottom:8px;">Download backup</button>
+      <label class="small-btn" for="gamesImportFile" style="display:block; width:100%; text-align:center; box-sizing:border-box; cursor:pointer;">Import backup</label>
+      <input id="gamesImportFile" type="file" accept="application/json,.json" style="display:none;">
+    </div>
   </section>
 </main>
 
@@ -442,6 +483,11 @@ const STORE_KEY = 'epa_engine_plays_v1';
 function loadPlays(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY)) || []; }catch(e){ return []; } }
 function savePlays(p){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(p)); }catch(e){} }
 let PLAYS = loadPlays();
+/* saved past games: [{id, opponent, date, savedAt, plays:[...]}] */
+const GAMES_KEY = 'epa_engine_games_v1';
+function loadGames(){ try{ return JSON.parse(localStorage.getItem(GAMES_KEY)) || []; }catch(e){ return []; } }
+function saveGames(g){ try{ localStorage.setItem(GAMES_KEY, JSON.stringify(g)); return true; }catch(e){ return false; } }
+let GAMES = loadGames();
 /* play types hidden from the Top Run / Top Pass calls (kept across games) */
 const HIDDEN_KEY = 'epa_engine_hidden_calls_v1';
 function loadHidden(){ try{ return JSON.parse(localStorage.getItem(HIDDEN_KEY)) || []; }catch(e){ return []; } }
@@ -463,6 +509,7 @@ document.querySelectorAll('header nav button').forEach(btn=>{
     if(btn.dataset.view==='log-list') renderFullLog();
     if(btn.dataset.view==='report') renderReport();
     if(btn.dataset.view==='sheet') renderSheet();
+    if(btn.dataset.view==='games') renderGames();
   });
 });
 
@@ -1249,6 +1296,137 @@ document.getElementById('clearBtn').addEventListener('click', ()=>{
   PLAYS = [];
   savePlays(PLAYS);
   renderFullLog(); renderRecent(); renderTendencies();
+});
+
+/* ---------- past games ---------- */
+(function(){ const d=document.getElementById('saveDate'); if(d && !d.value) d.value=new Date().toISOString().slice(0,10); })();
+
+function escHtml(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function gameLabel(g){ return `${g.opponent || 'Game'}${g.date ? ' · '+g.date : ''}`; }
+let GAME_SEL = new Set(GAMES.map(g=>g.id));
+let GAMES_MODE = 'playtype';
+let GAMES_OPEN = null;
+
+document.getElementById('saveGameBtn').addEventListener('click', ()=>{
+  if(PLAYS.length===0){ alert('No plays logged in this game yet.'); return; }
+  const opponent = document.getElementById('saveOpp').value.trim() || `Game ${GAMES.length+1}`;
+  const date = document.getElementById('saveDate').value || new Date().toISOString().slice(0,10);
+  if(!confirm(`Save ${PLAYS.length} plays as "${opponent} · ${date}" and clear the board for the next game?`)) return;
+  const game = { id: 'g'+Date.now(), opponent, date, savedAt: new Date().toISOString(), plays: PLAYS.slice() };
+  GAMES.push(game);
+  if(!saveGames(GAMES)){ GAMES.pop(); alert('Could not save — device storage is full. Download a backup from Past Games and delete old games, then try again.'); return; }
+  GAME_SEL.add(game.id);
+  PLAYS = []; savePlays(PLAYS);
+  document.getElementById('saveOpp').value = '';
+  renderFullLog(); renderRecent(); renderTendencies(); renderSheet();
+  alert(`Saved. "${opponent}" is in Past Games and the board is clear.`);
+});
+
+function renderGames(){
+  const list = document.getElementById('gamesList');
+  const body = document.getElementById('gamesBody');
+  if(GAMES.length===0){
+    list.innerHTML = '<div class="empty">No saved games yet. At the end of a game, go to Export &rarr; "Save game &amp; start new."</div>';
+    body.innerHTML = '';
+    return;
+  }
+  const sorted = GAMES.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  list.innerHTML = `<table><thead><tr><th></th><th>Game</th><th class="num">Plays</th><th class="num">EPA/play</th><th class="num">Success%</th><th></th></tr></thead><tbody>${
+    sorted.map(g=>{
+      const s = g.plays.length ? statsFor(g.plays) : null;
+      return `<tr>
+        <td><input type="checkbox" data-sel="${g.id}" ${GAME_SEL.has(g.id)?'checked':''} aria-label="Include ${escHtml(gameLabel(g))}"></td>
+        <td class="lbl">${escHtml(gameLabel(g))}</td>
+        <td class="num">${g.plays.length}</td>
+        <td class="num ${s&&s.avgEpa>0?'pos':(s&&s.avgEpa<0?'neg':'')}">${s?(s.avgEpa>=0?'+':'')+s.avgEpa.toFixed(2):'&mdash;'}</td>
+        <td class="num">${s&&s.successRate!==null?Math.round(s.successRate*100)+'%':'&mdash;'}</td>
+        <td style="white-space:nowrap;"><button class="small-btn" data-only="${g.id}">Only</button> <button class="small-btn danger" data-del="${g.id}" aria-label="Delete ${escHtml(gameLabel(g))}">&times;</button></td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+
+  list.querySelectorAll('[data-sel]').forEach(cb=>cb.addEventListener('change',()=>{
+    cb.checked ? GAME_SEL.add(cb.dataset.sel) : GAME_SEL.delete(cb.dataset.sel); renderGames();
+  }));
+  list.querySelectorAll('[data-only]').forEach(b=>b.addEventListener('click',()=>{ GAME_SEL = new Set([b.dataset.only]); renderGames(); }));
+  list.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{
+    const g = GAMES.find(x=>x.id===b.dataset.del); if(!g) return;
+    if(!confirm(`Delete "${gameLabel(g)}" (${g.plays.length} plays) permanently?`)) return;
+    GAMES = GAMES.filter(x=>x.id!==g.id); GAME_SEL.delete(g.id); saveGames(GAMES); renderGames();
+  }));
+
+  const chosen = sorted.filter(g=>GAME_SEL.has(g.id));
+  if(chosen.length===0){ body.innerHTML = '<div class="empty">Check at least one game above.</div>'; return; }
+
+  const all = [];
+  chosen.forEach(g=>g.plays.forEach(p=>all.push({...p, _game:g})));
+  const keyFn = GAMES_MODE==='personnel' ? r=>r.personnel : GAMES_MODE==='down' ? r=>`${r.down}${ordSuf(r.down)} down` : r=>r.playType;
+  let entries = [...groupBy(all.filter(p=>GAMES_MODE!=='playtype' || p.playCategory!=='Penalty'), keyFn).entries()]
+    .map(([k,v])=>({ label:k, plays:v, games:new Set(v.map(p=>p._game.id)).size, ...statsFor(v) }));
+  if(GAMES_MODE==='down') entries.sort((a,b)=>a.label.localeCompare(b.label));
+  else entries.sort((a,b)=>b.avgEpa-a.avgEpa);
+
+  const fmtE = v=>`<span class="${v>0?'pos':(v<0?'neg':'')}">${(v>=0?'+':'')+v.toFixed(2)}</span>`;
+  const fmtS = v=> v===null ? '&mdash;' : Math.round(v*100)+'%';
+  const head = GAMES_MODE==='personnel'?'Personnel':GAMES_MODE==='down'?'Down':'Play call';
+  body.innerHTML = `<div class="footnote" style="margin-bottom:6px;">${chosen.length} game${chosen.length>1?'s':''} &middot; ${all.length} plays</div>
+    <table><thead><tr><th>${head}</th><th class="num">Games</th><th class="num">N</th><th class="num">Avg Yds</th><th class="num">EPA/play</th><th class="num">Success%</th></tr></thead><tbody>${
+    entries.map(e=>{
+      const open = GAMES_OPEN===GAMES_MODE+'|'+e.label;
+      let detail = '';
+      if(open){
+        const byGame = groupBy(e.plays, p=>p._game.id);
+        detail = chosen.filter(g=>byGame.has(g.id)).map(g=>{
+          const s = statsFor(byGame.get(g.id));
+          return `<tr style="background:var(--bg2);"><td class="lbl" style="padding-left:18px; font-size:12px;">${escHtml(gameLabel(g))}</td><td></td>
+            <td class="num">${s.n}</td><td class="num">${s.avgYards===null?'&mdash;':(s.avgYards>=0?'+':'')+s.avgYards.toFixed(1)}</td>
+            <td class="num">${fmtE(s.avgEpa)}</td><td class="num">${fmtS(s.successRate)}</td></tr>`;
+        }).join('');
+      }
+      return `<tr data-open="${escHtml(e.label)}" style="cursor:pointer;">
+        <td class="lbl"><span style="display:inline-block; width:12px; color:var(--text-faint);">${open?'&#9662;':'&#9656;'}</span>${escHtml(e.label)}</td>
+        <td class="num">${e.games}</td><td class="num">${e.n}</td>
+        <td class="num">${e.avgYards===null?'&mdash;':(e.avgYards>=0?'+':'')+e.avgYards.toFixed(1)}</td>
+        <td class="num">${fmtE(e.avgEpa)}</td><td class="num">${fmtS(e.successRate)}</td></tr>${detail}`;
+    }).join('')}</tbody></table>`;
+  body.querySelectorAll('[data-open]').forEach(tr=>tr.addEventListener('click',()=>{
+    const k = GAMES_MODE+'|'+tr.dataset.open; GAMES_OPEN = GAMES_OPEN===k ? null : k; renderGames();
+  }));
+}
+document.getElementById('gamesSubtab').addEventListener('click',(e)=>{
+  if(e.target.tagName!=='BUTTON') return;
+  document.querySelectorAll('#gamesSubtab button').forEach(b=>b.classList.remove('on'));
+  e.target.classList.add('on'); GAMES_MODE = e.target.dataset.g; GAMES_OPEN = null; renderGames();
+});
+document.getElementById('gamesAllBtn').addEventListener('click',()=>{ GAME_SEL = new Set(GAMES.map(g=>g.id)); renderGames(); });
+document.getElementById('gamesNoneBtn').addEventListener('click',()=>{ GAME_SEL = new Set(); renderGames(); });
+document.getElementById('gamesBackupBtn').addEventListener('click',()=>{
+  if(GAMES.length===0){ alert('No saved games to back up yet.'); return; }
+  const blob = new Blob([JSON.stringify({ app:'gameday-epa-engine', version:1, exportedAt:new Date().toISOString(), games:GAMES })], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download=`epa_games_backup_${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+});
+document.getElementById('gamesImportFile').addEventListener('change',(e)=>{
+  const f = e.target.files && e.target.files[0]; if(!f) return;
+  const rd = new FileReader();
+  rd.onload = ()=>{
+    try{
+      const data = JSON.parse(rd.result);
+      const incoming = Array.isArray(data) ? data : data.games;
+      if(!Array.isArray(incoming)) throw new Error('bad file');
+      const have = new Set(GAMES.map(g=>g.id)); let added = 0;
+      incoming.forEach(g=>{
+        if(!g || !Array.isArray(g.plays) || have.has(g.id)) return;
+        GAMES.push({ id: g.id || 'g'+Date.now()+Math.random().toString(36).slice(2,6), opponent: String(g.opponent||'Game'), date: String(g.date||''), savedAt: g.savedAt||'', plays: g.plays });
+        GAME_SEL.add(GAMES[GAMES.length-1].id); added++;
+      });
+      if(!saveGames(GAMES)){ alert('Device storage is full — could not import.'); GAMES = loadGames(); return; }
+      alert(added ? `Imported ${added} game${added>1?'s':''}.` : 'Nothing new to import — those games are already here.');
+      renderGames();
+    }catch(err){ alert('That file is not an EPA engine backup.'); }
+    e.target.value = '';
+  };
+  rd.readAsText(f);
 });
 
 renderRecent();
