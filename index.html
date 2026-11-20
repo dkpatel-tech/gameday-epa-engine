@@ -286,31 +286,6 @@
     </div>
 
     <div class="card">
-      <h2>Their look</h2>
-      <p class="footnote" style="margin-top:-4px; margin-bottom:10px;">Don't have this yet? Leave it blank and fill it in later from the Play Log after the drive.</p>
-      <div class="row">
-        <div>
-          <label>Front</label>
-          <input id="frontInput" type="text" placeholder="e.g. 4-3, Odd, Bear">
-        </div>
-        <div>
-          <label>Stunt</label>
-          <input id="stuntInput" type="text" placeholder="e.g. Twist, None">
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label>Pressure</label>
-          <input id="pressureInput" type="text" placeholder="e.g. A-gap, Zero, None">
-        </div>
-        <div>
-          <label>Coverage</label>
-          <input id="coverageInput" type="text" placeholder="e.g. Cover 3, Man">
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
       <h2>Result</h2>
       <label>Outcome</label>
       <select id="outcomeSelect">
@@ -366,7 +341,6 @@
     <div class="card">
       <div class="flex-between">
         <h2 style="margin:0;">All logged plays</h2>
-        <button class="small-btn" id="pendingFilterBtn">Needs defense</button>
       </div>
       <div id="fullLogBody" style="margin-top:8px;"><div class="empty">No plays logged yet.</div></div>
     </div>
@@ -649,10 +623,6 @@ document.getElementById('logPlayBtn').addEventListener('click', ()=>{
   else if(rawChipV === 'Penalty') playCategory = 'Penalty';
   const personnel = chipVal('personnelChips','personnelCustom') || 'Unlabeled';
   const playType = chipVal('playtypeChips','playtypeCustom') || 'Unlabeled';
-  const front = document.getElementById('frontInput').value.trim();
-  const stunt = document.getElementById('stuntInput').value.trim();
-  const pressure = document.getElementById('pressureInput').value.trim();
-  const coverage = document.getElementById('coverageInput').value.trim();
   const outcome = outcomeSelect.value;
 
   const before = { timeSecsRem, yardsToGoal:ytg, distance, down, scoreDiff };
@@ -712,7 +682,7 @@ document.getElementById('logPlayBtn').addEventListener('click', ()=>{
 
   const play = {
     ts: Date.now(), quarter, clockStr, down, distance, ytg, scoreUs, scoreThem, playCategory,
-    personnel, playType, front, stunt, pressure, coverage, outcome, yardsGained,
+    personnel, playType, outcome, yardsGained,
     epBefore: round3(epBefore), epAfter: round3(epAfter), epa: round3(epa),
     playChip: rawChipV, newYtgAfter
   };
@@ -760,10 +730,6 @@ function clearForm(){
   document.querySelectorAll('#personnelChips .chip, #playtypeChips .chip').forEach(c=>c.classList.remove('on'));
   document.getElementById('playtypeCustom').value = '';
   document.getElementById('personnelCustom').value = '';
-  // clear their-look fields
-  ['frontInput','stuntInput','pressureInput','coverageInput'].forEach(id=>{
-    const el = document.getElementById(id); if(el) el.value='';
-  });
   // clear result / outcome
   document.getElementById('yardsGainedInput').value = '';
   document.getElementById('newYtgInput').value = '';
@@ -958,7 +924,7 @@ function renderRecent(){
     return `<div class="row-recent">
       <div>
         <div>${p.personnel} &middot; ${p.playType}</div>
-        <div class="meta">Q${p.quarter} ${p.clockStr} &middot; ${p.down}${ordSuf(p.down)} &amp; ${p.distance} &middot; ${theirLookSummary(p)}</div>
+        <div class="meta">Q${p.quarter} ${p.clockStr} &middot; ${p.down}${ordSuf(p.down)} &amp; ${p.distance}</div>
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <div class="${cls}" style="font-weight:700;">${sign}${p.epa.toFixed(2)}</div>
@@ -969,15 +935,6 @@ function renderRecent(){
   list.querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>startEdit(parseInt(b.dataset.edit,10))));
 }
 function ordSuf(n){ return n===1?'st':n===2?'nd':n===3?'rd':'th'; }
-function needsDefense(p){ return !p.front && !p.stunt && !p.pressure && !p.coverage; }
-function theirLookSummary(p){
-  const parts = [];
-  if(p.front) parts.push(p.front);
-  if(p.stunt) parts.push(p.stunt);
-  if(p.pressure) parts.push(p.pressure);
-  if(p.coverage) parts.push(p.coverage);
-  return parts.length ? parts.join(' &middot; ') : '<span class="badge pending">DEF PENDING</span>';
-}
 
 /* ---------- tendencies ---------- */
 document.getElementById('tendSubtab').addEventListener('click', (e)=>{
@@ -1023,16 +980,6 @@ function ddBucket(distance){
   if(distance<=2) return 'Short (1-2)';
   if(distance<=6) return 'Medium (3-6)';
   return 'Long (7+)';
-}
-/* frequency breakdown of a free-text defensive-look field (front/stunt/pressure/coverage),
-   ignoring blank entries. topN limits how many values are shown (default: all). */
-function fieldBreakdown(rows, field, topN){
-  const known = rows.filter(r=>r[field]);
-  if(known.length===0) return null;
-  const m = groupBy(known, r=>r[field]);
-  const entries = [...m.entries()].sort((a,b)=>b[1].length-a[1].length);
-  const limited = topN ? entries.slice(0,topN) : entries;
-  return limited.map(([k,v])=>`${k} (${Math.round(100*v.length/known.length)}%)`).join(', ');
 }
 
 function renderTendencies(){
@@ -1092,13 +1039,7 @@ function renderTendencies(){
       if(!v) return;
       const s = statsFor(v);
       html += `<div style="margin-bottom:16px;">
-        <div style="font-weight:700; font-size:13px; margin-bottom:6px;">${k} &middot; n=${s.n} &middot; avg EPA ${(s.avgEpa>=0?'+':'')+s.avgEpa.toFixed(2)}</div>
-        <div class="footnote" style="font-size:12.5px; line-height:1.7; color:var(--text-dim);">
-          <b>Front:</b> ${fieldBreakdown(v,'front') || '&mdash;'}<br>
-          <b>Stunt:</b> ${fieldBreakdown(v,'stunt') || '&mdash;'}<br>
-          <b>Pressure:</b> ${fieldBreakdown(v,'pressure') || '&mdash;'}<br>
-          <b>Coverage:</b> ${fieldBreakdown(v,'coverage') || '&mdash;'}
-        </div>
+        <div style="font-weight:700; font-size:13px;">${k} &middot; n=${s.n} &middot; avg EPA ${(s.avgEpa>=0?'+':'')+s.avgEpa.toFixed(2)}</div>
       </div>`;
     });
     body.innerHTML = html;
@@ -1158,23 +1099,7 @@ function renderReport(){
   const thirdDowns = plays.filter(r=>r.down===3);
   const ddGroups = groupBy(thirdDowns, r=>ddBucket(r.distance));
   const ddOrder = ['Short (1-2)','Medium (3-6)','Long (7+)'];
-  const ddRows = ddOrder.map(k=>{
-    const v = ddGroups.get(k);
-    if(!v) return '';
-    const s = statsFor(v);
-    return `<tr>
-      <td class="lbl">${k}</td>
-      <td class="num">${s.n}</td>
-      <td class="num">${(s.avgEpa>=0?'+':'')+s.avgEpa.toFixed(2)}</td>
-      <td>${fieldBreakdown(v,'front',1) || '&mdash;'}</td>
-      <td>${fieldBreakdown(v,'stunt',1) || '&mdash;'}</td>
-      <td>${fieldBreakdown(v,'pressure',1) || '&mdash;'}</td>
-      <td>${fieldBreakdown(v,'coverage',1) || '&mdash;'}</td>
-    </tr>`;
-  }).join('');
-  const ddTable = `<table><thead><tr>
-      <th>Dist.</th><th>N</th><th>EPA</th><th>Front</th><th>Stunt</th><th>Pressure</th><th>Coverage</th>
-    </tr></thead><tbody>${ddRows || '<tr><td colspan="7" class="empty">No 3rd-down plays yet</td></tr>'}</tbody></table>`;
+  const byDD = ddOrder.filter(k=>ddGroups.has(k)).map(k=>[k, ddGroups.get(k)]);
 
   body.innerHTML = `
     <div class="card">
@@ -1196,8 +1121,8 @@ function renderReport(){
           ${compactTable(byDownEntries, 'Down')}
         </div>
         <div class="report-block wide">
-          <h3>3rd down defensive tendencies</h3>
-          ${ddTable}
+          <h3>3rd down by distance</h3>
+          ${compactTable(byDD, 'Dist.')}
         </div>
       </div>
     </div>
@@ -1210,20 +1135,11 @@ document.getElementById('printReportBtn').addEventListener('click', ()=>{
 });
 window.addEventListener('beforeprint', renderReport);
 
-
-let PENDING_FILTER = false;
-document.getElementById('pendingFilterBtn').addEventListener('click', ()=>{
-  PENDING_FILTER = !PENDING_FILTER;
-  document.getElementById('pendingFilterBtn').classList.toggle('on', PENDING_FILTER);
-  renderFullLog();
-});
-
 function renderFullLog(){
   const body = document.getElementById('fullLogBody');
-  let list = PLAYS.slice();
-  if(PENDING_FILTER) list = list.filter(needsDefense);
+  const list = PLAYS.slice();
   if(list.length===0){
-    body.innerHTML = `<div class="empty">${PENDING_FILTER ? "Nothing waiting on defense." : "No plays logged yet."}</div>`;
+    body.innerHTML = `<div class="empty">No plays logged yet.</div>`;
     return;
   }
   // map back to real index in PLAYS before reversing for display
@@ -1232,21 +1148,18 @@ function renderFullLog(){
   const rows = withIdx.map(({p, realIdx})=>{
     const cls = p.epa>0?'pos':(p.epa<0?'neg':'');
     const sign = p.epa>0?'+':'';
-    const pending = needsDefense(p);
     return `<div class="row-recent" style="display:block;" data-row="${realIdx}">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <div>
           <div>Q${p.quarter} ${p.clockStr} &middot; ${p.down}${ordSuf(p.down)}&amp;${p.distance} &middot; ${p.personnel}/${p.playType}</div>
-          <div class="meta">${theirLookSummary(p)} &middot; ${p.outcome}</div>
+          <div class="meta">${p.outcome}</div>
         </div>
         <div style="display:flex; align-items:center; gap:6px;">
           <div class="${cls}" style="font-weight:700;">${sign}${p.epa.toFixed(2)}</div>
           <button class="small-btn edit-btn" data-idx="${realIdx}">Edit</button>
-          <button class="small-btn def-btn" data-idx="${realIdx}">Def</button>
           <button class="del-btn" data-idx="${realIdx}">&times;</button>
         </div>
       </div>
-      <div class="def-editor" id="def-editor-${realIdx}" style="display:none; margin-top:10px; padding-top:10px; border-top:1px solid var(--line);"></div>
     </div>`;
   }).join('');
   body.innerHTML = rows;
@@ -1268,59 +1181,12 @@ function renderFullLog(){
   body.querySelectorAll('.edit-btn').forEach(btn=>{
     btn.addEventListener('click', ()=> startEdit(parseInt(btn.dataset.idx,10)));
   });
-  body.querySelectorAll('.def-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=> openDefEditor(parseInt(btn.dataset.idx,10)));
-  });
-}
-
-function esc(s){ return (s||'').replace(/"/g,'&quot;'); }
-
-function openDefEditor(idx){
-  const panel = document.getElementById('def-editor-'+idx);
-  if(!panel) return;
-  if(panel.style.display === 'block'){ panel.style.display = 'none'; return; }
-  const p = PLAYS[idx];
-  panel.innerHTML = `
-    <div class="row">
-      <div>
-        <label>Front</label>
-        <input id="editFront-${idx}" type="text" value="${esc(p.front)}">
-      </div>
-      <div>
-        <label>Stunt</label>
-        <input id="editStunt-${idx}" type="text" value="${esc(p.stunt)}">
-      </div>
-    </div>
-    <div class="row">
-      <div>
-        <label>Pressure</label>
-        <input id="editPressure-${idx}" type="text" value="${esc(p.pressure)}">
-      </div>
-      <div>
-        <label>Coverage</label>
-        <input id="editCoverage-${idx}" type="text" value="${esc(p.coverage)}">
-      </div>
-    </div>
-    <button class="submit-btn" id="editSaveBtn-${idx}" style="margin-top:6px;">Save defense</button>
-  `;
-  panel.style.display = 'block';
-
-  document.getElementById(`editSaveBtn-${idx}`).addEventListener('click', ()=>{
-    PLAYS[idx].front = document.getElementById(`editFront-${idx}`).value.trim();
-    PLAYS[idx].stunt = document.getElementById(`editStunt-${idx}`).value.trim();
-    PLAYS[idx].pressure = document.getElementById(`editPressure-${idx}`).value.trim();
-    PLAYS[idx].coverage = document.getElementById(`editCoverage-${idx}`).value.trim();
-    savePlays(PLAYS);
-    renderFullLog();
-    renderRecent();
-    renderTendencies();
-  });
 }
 
 /* ---------- export ---------- */
 document.getElementById('exportBtn').addEventListener('click', ()=>{
   if(PLAYS.length===0){ alert('No plays to export yet.'); return; }
-  const cols = ['ts','quarter','clockStr','down','distance','ytg','scoreUs','scoreThem','personnel','playType','front','stunt','pressure','coverage','outcome','yardsGained','epBefore','epAfter','epa'];
+  const cols = ['ts','quarter','clockStr','down','distance','ytg','scoreUs','scoreThem','personnel','playType','outcome','yardsGained','epBefore','epAfter','epa'];
   const lines = [cols.join(',')];
   PLAYS.forEach(p=>{
     lines.push(cols.map(c=>{
@@ -1380,8 +1246,6 @@ function startEdit(idx){
              p.playCategory==='Run' ? 'Run' : p.playCategory==='Pass' ? 'Pass' : p.playCategory==='Penalty' ? 'Penalty' : null);
   setChip('playtypeChips', chip);
   setVal('playtypeCustom', (PLAYTYPE_CHIPS.includes(p.playType) || p.playType==='Unlabeled') ? '' : p.playType);
-  // their look
-  setVal('frontInput', p.front); setVal('stuntInput', p.stunt); setVal('pressureInput', p.pressure); setVal('coverageInput', p.coverage);
   // result
   outcomeSelect.value = p.outcome || 'normal';
   outcomeSelect.dispatchEvent(new Event('change'));
