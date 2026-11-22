@@ -287,7 +287,12 @@
 
     <div class="card">
       <h2>Result</h2>
-      <label>Outcome</label>
+      <label>Pressure on the play?</label>
+      <div class="seg" id="pressureSeg">
+        <button data-v="no">No</button>
+        <button data-v="yes">Pressure</button>
+      </div>
+      <label style="margin-top:12px;">Outcome</label>
       <select id="outcomeSelect">
         <option value="normal">Gain / loss (drive continues)</option>
         <option value="td_off">Touchdown &mdash; offense</option>
@@ -546,6 +551,7 @@ document.getElementById('playtypeChips').addEventListener('click', ()=>{
 wireSeg('penWhoSeg','them');
 wireSeg('penResultSeg','auto1st');
 wireSeg('penAcceptSeg','accepted');
+wireSeg('pressureSeg','no');
 
 /* show/hide "Result of enforcement" row based on who committed the penalty */
 document.getElementById('penWhoSeg').addEventListener('click', ()=>{
@@ -682,7 +688,7 @@ document.getElementById('logPlayBtn').addEventListener('click', ()=>{
 
   const play = {
     ts: Date.now(), quarter, clockStr, down, distance, ytg, scoreUs, scoreThem, playCategory,
-    personnel, playType, outcome, yardsGained,
+    personnel, playType, pressure: segVal('pressureSeg')==='yes', outcome, yardsGained,
     epBefore: round3(epBefore), epAfter: round3(epAfter), epa: round3(epa),
     playChip: rawChipV, newYtgAfter
   };
@@ -731,6 +737,7 @@ function clearForm(){
   document.getElementById('playtypeCustom').value = '';
   document.getElementById('personnelCustom').value = '';
   // clear result / outcome
+  segSetVal('pressureSeg','no');
   document.getElementById('yardsGainedInput').value = '';
   document.getElementById('newYtgInput').value = '';
   document.getElementById('outcomeSelect').value = 'normal';
@@ -829,6 +836,8 @@ function renderSheet(){
     `<div class="hidden-calls"><span>Hidden from top 3 (tap to restore):</span>${
       HIDDEN_CALLS.map(k=>`<button data-unhide="${escAttr(k)}">${escAttr(k)} &#8634;</button>`).join('')}</div>`;
 
+  const pr = pressureStats(PLAYS);
+
   /* ── 3RD DOWN ── */
   const thirdDowns = PLAYS.filter(p=>p.down===3 && p.playCategory!=='Penalty');
   let thirdEpa = null, thirdConv = null;
@@ -896,6 +905,15 @@ function renderSheet(){
     <div class="sheet-section">
       <div class="sheet-section-hdr" style="border-radius:8px 8px 0 0;">3RD DOWN</div>
       ${thirdHtml}
+    </div>
+
+    <!-- Pressure -->
+    <div class="sheet-section" style="margin-top:14px;">
+      <div class="sheet-section-hdr" style="border-radius:8px 8px 0 0;">PRESSURE</div>
+      <div style="padding:10px; text-align:center; background:var(--panel); border:1px solid var(--line); border-radius:0 0 8px 8px;">
+        <div style="font-size:26px; font-weight:800;">${pr.rate===null?'&mdash;':Math.round(pr.rate*100)+'%'}</div>
+        <div style="font-size:10px; color:var(--text-faint); margin-top:3px;">Pressure % &nbsp;(${pr.n} of ${pr.total} plays)</div>
+      </div>
     </div>
   `;
   body.querySelectorAll('[data-hide]').forEach(b=>b.addEventListener('click',()=>hideCall(b.dataset.hide)));
@@ -975,6 +993,12 @@ function statsFor(rows){
   const yardsKnown = rows.filter(r=>typeof r.yardsGained==='number' && !isNaN(r.yardsGained));
   const avgYards = yardsKnown.length ? yardsKnown.reduce((s,r)=>s+r.yardsGained,0)/yardsKnown.length : null;
   return { n, avgEpa, successRate, avgYards, yardsKnownN: yardsKnown.length };
+}
+/* pressure rate = plays flagged with pressure / all non-penalty plays */
+function pressureStats(rows){
+  const eligible = rows.filter(r=>r.playCategory!=='Penalty');
+  const n = eligible.filter(r=>r.pressure===true).length;
+  return { n, total: eligible.length, rate: eligible.length ? n/eligible.length : null };
 }
 function ddBucket(distance){
   if(distance<=2) return 'Short (1-2)';
@@ -1100,6 +1124,7 @@ function renderReport(){
   const ddGroups = groupBy(thirdDowns, r=>ddBucket(r.distance));
   const ddOrder = ['Short (1-2)','Medium (3-6)','Long (7+)'];
   const byDD = ddOrder.filter(k=>ddGroups.has(k)).map(k=>[k, ddGroups.get(k)]);
+  const pr = pressureStats(plays);
 
   body.innerHTML = `
     <div class="card">
@@ -1123,6 +1148,11 @@ function renderReport(){
         <div class="report-block wide">
           <h3>3rd down by distance</h3>
           ${compactTable(byDD, 'Dist.')}
+        </div>
+        <div class="report-block wide">
+          <h3>Pressure</h3>
+          <div style="font-size:26px; font-weight:800;">${pr.rate===null?'&mdash;':Math.round(pr.rate*100)+'%'}</div>
+          <div class="footnote">${pr.n} of ${pr.total} plays</div>
         </div>
       </div>
     </div>
@@ -1186,7 +1216,7 @@ function renderFullLog(){
 /* ---------- export ---------- */
 document.getElementById('exportBtn').addEventListener('click', ()=>{
   if(PLAYS.length===0){ alert('No plays to export yet.'); return; }
-  const cols = ['ts','quarter','clockStr','down','distance','ytg','scoreUs','scoreThem','personnel','playType','outcome','yardsGained','epBefore','epAfter','epa'];
+  const cols = ['ts','quarter','clockStr','down','distance','ytg','scoreUs','scoreThem','personnel','playType','pressure','outcome','yardsGained','epBefore','epAfter','epa'];
   const lines = [cols.join(',')];
   PLAYS.forEach(p=>{
     lines.push(cols.map(c=>{
@@ -1247,6 +1277,7 @@ function startEdit(idx){
   setChip('playtypeChips', chip);
   setVal('playtypeCustom', (PLAYTYPE_CHIPS.includes(p.playType) || p.playType==='Unlabeled') ? '' : p.playType);
   // result
+  segSetVal('pressureSeg', p.pressure === true ? 'yes' : 'no');
   outcomeSelect.value = p.outcome || 'normal';
   outcomeSelect.dispatchEvent(new Event('change'));
   setVal('yardsGainedInput', p.yardsGained);
