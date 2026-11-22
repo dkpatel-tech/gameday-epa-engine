@@ -792,12 +792,13 @@ function renderSheet(){
   /* ── PERSONNEL ── sorted by EPA desc */
   const persMap = groupBy(PLAYS, r=>r.personnel);
   const persRows = [...persMap.entries()]
-    .map(([k,v])=>({ label:k, ...statsFor(v) }))
+    .map(([k,v])=>({ label:k, ...statsFor(v), pressureRate: pressureStats(v).rate }))
     .sort((a,b)=>b.avgEpa-a.avgEpa);
   const persHtml = persRows.map((r,i)=>`<tr>
     <td class="lbl" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.label}</td>
     ${fmtEpa(r.avgEpa)}
     ${fmtSR(r.successRate)}
+    ${fmtSR(r.pressureRate)}
     <td>${r.n}</td>
   </tr>`).join('');
 
@@ -835,8 +836,6 @@ function renderSheet(){
   const hiddenHtml = HIDDEN_CALLS.length===0 ? '' :
     `<div class="hidden-calls"><span>Hidden from top 3 (tap to restore):</span>${
       HIDDEN_CALLS.map(k=>`<button data-unhide="${escAttr(k)}">${escAttr(k)} &#8634;</button>`).join('')}</div>`;
-
-  const pr = pressureStats(PLAYS);
 
   /* ── 3RD DOWN ── */
   const thirdDowns = PLAYS.filter(p=>p.down===3 && p.playCategory!=='Penalty');
@@ -876,8 +875,8 @@ function renderSheet(){
     <div class="card sheet-section">
       <div class="sheet-section-hdr">PERSONNEL</div>
       <table class="sheet-table">
-        <thead><tr><th class="lbl">Group</th><th>EPA/play</th><th>Success%</th><th>Plays</th></tr></thead>
-        <tbody>${persHtml || '<tr><td colspan="4" class="empty">—</td></tr>'}</tbody>
+        <thead><tr><th class="lbl">Group</th><th>EPA/play</th><th>Success%</th><th>Pressure%</th><th>Plays</th></tr></thead>
+        <tbody>${persHtml || '<tr><td colspan="5" class="empty">—</td></tr>'}</tbody>
       </table>
     </div>
 
@@ -905,15 +904,6 @@ function renderSheet(){
     <div class="sheet-section">
       <div class="sheet-section-hdr" style="border-radius:8px 8px 0 0;">3RD DOWN</div>
       ${thirdHtml}
-    </div>
-
-    <!-- Pressure -->
-    <div class="sheet-section" style="margin-top:14px;">
-      <div class="sheet-section-hdr" style="border-radius:8px 8px 0 0;">PRESSURE</div>
-      <div style="padding:10px; text-align:center; background:var(--panel); border:1px solid var(--line); border-radius:0 0 8px 8px;">
-        <div style="font-size:26px; font-weight:800;">${pr.rate===null?'&mdash;':Math.round(pr.rate*100)+'%'}</div>
-        <div style="font-size:10px; color:var(--text-faint); margin-top:3px;">Pressure % &nbsp;(${pr.n} of ${pr.total} plays)</div>
-      </div>
     </div>
   `;
   body.querySelectorAll('[data-hide]').forEach(b=>b.addEventListener('click',()=>hideCall(b.dataset.hide)));
@@ -1085,9 +1075,9 @@ function reportPlays(){
   return PLAYS.slice();
 }
 
-function compactTable(groupEntries, labelHeader){
+function compactTable(groupEntries, labelHeader, withPressure){
   const withStats = groupEntries
-    .map(([k,v])=>({ label:k, ...statsFor(v) }))
+    .map(([k,v])=>({ label:k, ...statsFor(v), pressureRate: pressureStats(v).rate }))
     .sort((a,b)=>b.avgEpa-a.avgEpa);
   if(withStats.length===0) return `<div class="empty" style="padding:4px 0;">No plays yet</div>`;
   const rows = withStats.map(r=>`<tr>
@@ -1096,9 +1086,10 @@ function compactTable(groupEntries, labelHeader){
     <td class="num">${r.avgYards===null?'&mdash;':(r.avgYards>=0?'+':'')+r.avgYards.toFixed(1)}</td>
     <td class="num">${(r.avgEpa>=0?'+':'')+r.avgEpa.toFixed(2)}</td>
     <td class="num">${r.successRate===null?'&mdash;':Math.round(r.successRate*100)+'%'}</td>
+    ${withPressure ? `<td class="num">${r.pressureRate===null?'&mdash;':Math.round(r.pressureRate*100)+'%'}</td>` : ''}
   </tr>`).join('');
   return `<table><thead><tr>
-    <th>${labelHeader}</th><th>N</th><th>Yds</th><th>EPA</th><th>Succ%</th>
+    <th>${labelHeader}</th><th>N</th><th>Yds</th><th>EPA</th><th>Succ%</th>${withPressure ? '<th>Press%</th>' : ''}
   </tr></thead><tbody>${rows}</tbody></table>`;
 }
 
@@ -1124,7 +1115,6 @@ function renderReport(){
   const ddGroups = groupBy(thirdDowns, r=>ddBucket(r.distance));
   const ddOrder = ['Short (1-2)','Medium (3-6)','Long (7+)'];
   const byDD = ddOrder.filter(k=>ddGroups.has(k)).map(k=>[k, ddGroups.get(k)]);
-  const pr = pressureStats(plays);
 
   body.innerHTML = `
     <div class="card">
@@ -1135,7 +1125,7 @@ function renderReport(){
       <div class="report-grid">
         <div class="report-block">
           <h3>By personnel</h3>
-          ${compactTable(byPersonnel, 'Personnel')}
+          ${compactTable(byPersonnel, 'Personnel', true)}
         </div>
         <div class="report-block">
           <h3>By play type</h3>
@@ -1148,13 +1138,7 @@ function renderReport(){
         <div class="report-block wide">
           <h3>3rd down by distance</h3>
           ${compactTable(byDD, 'Dist.')}
-        </div>
-        <div class="report-block wide">
-          <h3>Pressure</h3>
-          <div style="font-size:26px; font-weight:800;">${pr.rate===null?'&mdash;':Math.round(pr.rate*100)+'%'}</div>
-          <div class="footnote">${pr.n} of ${pr.total} plays</div>
-        </div>
-      </div>
+        </div>      </div>
     </div>
   `;
 }
@@ -1216,7 +1200,7 @@ function renderFullLog(){
 /* ---------- export ---------- */
 document.getElementById('exportBtn').addEventListener('click', ()=>{
   if(PLAYS.length===0){ alert('No plays to export yet.'); return; }
-  const cols = ['ts','quarter','clockStr','down','distance','ytg','scoreUs','scoreThem','personnel','playType','pressure','outcome','yardsGained','epBefore','epAfter','epa'];
+  const cols = ['ts','quarter','clockStr','down','distance','ytg','scoreUs','scoreThem','personnel','playType','outcome','yardsGained','epBefore','epAfter','epa'];
   const lines = [cols.join(',')];
   PLAYS.forEach(p=>{
     lines.push(cols.map(c=>{
