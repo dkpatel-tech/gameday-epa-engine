@@ -661,7 +661,7 @@ document.getElementById('logPlayBtn').addEventListener('click', ()=>{
       const newDist   = Math.min(distance + penYards, newYtgPen);
       epAfter = expectedPoints({ timeSecsRem, yardsToGoal:newYtgPen, distance:newDist, down, scoreDiff });
     }
-  } else if(outcome === 'td_off'){ epAfter = 7; }
+  } else if(outcome === 'td_off'){ epAfter = 7; yardsGained = ytg; }
   else if(outcome === 'td_def'){ epAfter = -7; }
   else if(outcome === 'safety'){ epAfter = -2; }
   else if(outcome === 'fg_good'){ epAfter = 3; }
@@ -975,13 +975,18 @@ function isSuccess(p){
   if(p.down===2) return gain >= 0.5*p.distance;
   return gain >= p.distance; // 3rd/4th: only a real conversion counts
 }
+/* an offensive TD gains the full distance to goal; derived here so older saved TDs count too */
+function playYards(p){
+  if(p.outcome==='td_off' && p.playCategory!=='Penalty' && Number.isFinite(p.ytg)) return p.ytg;
+  return p.yardsGained;
+}
 function statsFor(rows){
   const n = rows.length;
   const avgEpa = rows.reduce((s,r)=>s+r.epa,0)/n;
   const successEligible = rows.map(isSuccess).filter(v=>v!==null);
   const successRate = successEligible.length ? successEligible.filter(v=>v).length/successEligible.length : null;
-  const yardsKnown = rows.filter(r=>typeof r.yardsGained==='number' && !isNaN(r.yardsGained));
-  const avgYards = yardsKnown.length ? yardsKnown.reduce((s,r)=>s+r.yardsGained,0)/yardsKnown.length : null;
+  const yardsKnown = rows.map(playYards).filter(v=>typeof v==='number' && !isNaN(v));
+  const avgYards = yardsKnown.length ? yardsKnown.reduce((s,v)=>s+v,0)/yardsKnown.length : null;
   return { n, avgEpa, successRate, avgYards, yardsKnownN: yardsKnown.length };
 }
 /* pressure rate = plays flagged with pressure / all non-penalty plays */
@@ -1204,7 +1209,7 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
   const lines = [cols.join(',')];
   PLAYS.forEach(p=>{
     lines.push(cols.map(c=>{
-      let v = p[c]; if(v===null||v===undefined) v='';
+      let v = c==='yardsGained' ? playYards(p) : p[c]; if(v===null||v===undefined) v='';
       v = String(v).replace(/"/g,'""');
       return /[,"\n]/.test(v) ? `"${v}"` : v;
     }).join(','));
